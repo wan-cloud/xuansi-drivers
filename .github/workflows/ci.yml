@@ -43,11 +43,14 @@ jobs:
         run: |
           set -eux
           sudo apt-get update -qq && sudo apt-get install -y -qq ninja-build ccache
-          git clone --depth 1 https://github.com/bytecodealliance/wasm-micro-runtime.git wamr
-          git -C wamr checkout "$WAMR_COMMIT"
-          git clone --depth 1 --branch xtensa_release_18.1.2 \
-            https://github.com/espressif/llvm-project.git wamr/core/deps/llvm
-          git -C wamr/core/deps/llvm checkout "$XTENSA_LLVM_COMMIT"
+          git init wamr
+          git -C wamr remote add origin https://github.com/bytecodealliance/wasm-micro-runtime.git
+          git -C wamr fetch --depth 1 origin "$WAMR_COMMIT"
+          git -C wamr checkout FETCH_HEAD
+          git init wamr/core/deps/llvm
+          git -C wamr/core/deps/llvm remote add origin https://github.com/espressif/llvm-project.git
+          git -C wamr/core/deps/llvm fetch --depth 1 origin "$XTENSA_LLVM_COMMIT"
+          git -C wamr/core/deps/llvm checkout FETCH_HEAD
           cmake -G Ninja -S wamr/core/deps/llvm/llvm -B wamr/core/deps/llvm/build \
             -DCMAKE_BUILD_TYPE=Release \
             -DLLVM_TARGETS_TO_BUILD="AArch64;ARM;Mips;RISCV;X86" \
