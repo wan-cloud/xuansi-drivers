@@ -3,13 +3,28 @@
   "kind": "algorithm",
   "version": "1.0.0",
   "abi": 1,
-  "src_commit": "f004480e2971da562b44a8cb6094047f40371665",
+  "src_commit": "d574147efcb59aea5d2212570503ebcf1eeb0fcf",
   "src": "src/ledwatch/ledwatch.c",
-  "imports": ["xuansi.camera_frame_get", "xuansi.camera_info"],
+  "imports": [
+    "xuansi.camera_frame_get",
+    "xuansi.camera_info"
+  ],
   "entries": [
-    { "fn": "xuansi_abi", "signature": "() -> u32", "desc": "abi version gate; the loader calls it at instantiate and refuses anything != 1" },
-    { "fn": "xuansi_alloc", "signature": "(u32 n) -> u32", "desc": "linear-memory offset for the host-written msgpack args; 0 = refusal" },
-    { "fn": "analyze", "signature": "[cfg?] -> {regions=[{x,y,w,h,area,luma_mean,r_mean,g_mean,b_mean}], frame={w,h}}", "desc": "one QVGA frame -> lit regions sorted by area desc, capped at max_regions. cfg (all optional, unknown keys ignored): threshold 0..255 (default 128, lit = luma >= threshold), min_area (default 16), max_regions 1..32 (default 8), discard_first (default true: consume one frame first for AWB convergence — stateless, exactly two camera_frame_get calls). Means are integers 0..255 (no floats in the abi=1 value bridge); luma = BT.601 integer approx (77R+150G+29B)>>8 with 5/6-bit components replicated to 8 bits. Camera must be on at QVGA (caller's responsibility); camera-off or larger framesizes raise the host's rt exception." }
+    {
+      "fn": "xuansi_abi",
+      "signature": "() -> u32",
+      "desc": "abi version gate; the loader calls it at instantiate and refuses anything != 1"
+    },
+    {
+      "fn": "xuansi_alloc",
+      "signature": "(u32 n) -> u32",
+      "desc": "linear-memory offset for the host-written msgpack args; 0 = refusal"
+    },
+    {
+      "fn": "analyze",
+      "signature": "[cfg?] -> {regions=[{x,y,w,h,area,luma_mean,r_mean,g_mean,b_mean}], frame={w,h}}",
+      "desc": "one QVGA frame -> lit regions sorted by area desc, capped at max_regions. cfg (all optional, unknown keys ignored): threshold 0..255 (default 128, lit = luma >= threshold), min_area (default 16), max_regions 1..32 (default 8), discard_first (default true: consume one frame first for AWB convergence — stateless, exactly two camera_frame_get calls). Means are integers 0..255 (no floats in the abi=1 value bridge); luma = BT.601 integer approx (77R+150G+29B)>>8 with 5/6-bit components replicated to 8 bits. Camera must be on at QVGA (caller's responsibility); camera-off or larger framesizes raise the host's rt exception."
+    }
   ],
   "linear_memory": {
     "initial_bytes": 720896,
@@ -18,14 +33,14 @@
   },
   "deliverable": {
     "path": "modules/ledwatch/1.0.0/ledwatch.wasm",
-    "sha256": "9bee5f3cbdea3a1cc8e98d030c985f4975d0d63aa54a9ad9d176a54c5aabee69",
-    "bytes": 7518
+    "sha256": "3454105a7233f29dd405a2de4900534672269587a4232d2f244e450f0fe54f66",
+    "bytes": 7547
   },
   "auxiliary": [
     {
       "path": "modules/ledwatch/1.0.0/ledwatch.aot",
-      "sha256": "53fb5265fcf3b6a47b5373855fae08e7b717ba076552e5f4bfae8d9807f780e8",
-      "bytes": 14608,
+      "sha256": "995017dbc8565c1801ed4baf97d3e9ed9d3cc1b73d656aaa7586bc061edd38ad",
+      "bytes": 14620,
       "note": "wamrc xtensa/esp32s3 output, hash-recorded for provenance. NOT deployable on the current board stack: the loader honestly refuses .aot execution (upstream ESP32-S3 AOT-in-PSRAM defect). Future-ready; never listed in index.json files[]."
     }
   ],

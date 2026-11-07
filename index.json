@@ -9,11 +9,11 @@
       "files": [
         {
           "path": "modules/hello/1.0.0/hello.wasm",
-          "sha256": "959b20ef4e9e9fef01cce6c9abb2675c633bb736d1d86917f26377352a1b9947",
-          "bytes": 5691
+          "sha256": "f8befc84ae31bab08308cf3ccfed8be0d42667a4f9b1953fba9612c8d61c1d4c",
+          "bytes": 5707
         }
       ],
-      "src_commit": "3c08dfe8080a4e222ddd63057af1dd03f240bb61"
+      "src_commit": "d574147efcb59aea5d2212570503ebcf1eeb0fcf"
     },
     {
       "name": "ledwatch",
@@ -23,11 +23,11 @@
       "files": [
         {
           "path": "modules/ledwatch/1.0.0/ledwatch.wasm",
-          "sha256": "9bee5f3cbdea3a1cc8e98d030c985f4975d0d63aa54a9ad9d176a54c5aabee69",
-          "bytes": 7518
+          "sha256": "3454105a7233f29dd405a2de4900534672269587a4232d2f244e450f0fe54f66",
+          "bytes": 7547
         }
       ],
-      "src_commit": "f004480e2971da562b44a8cb6094047f40371665"
+      "src_commit": "d574147efcb59aea5d2212570503ebcf1eeb0fcf"
     }
   ]
 }
