@@ -61,7 +61,7 @@ jobs:
             -DCMAKE_CXX_FLAGS="-include cstdint" \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           ninja -C wamr/core/deps/llvm/build
-          cmake -S wamr/wamr-compiler -B wamr/wamr-compiler/build \
+          cmake -G Ninja -S wamr/wamr-compiler -B wamr/wamr-compiler/build \
             -DCMAKE_BUILD_TYPE= \
             -DCMAKE_CXX_FLAGS="-include cstdint" \
             -DLLVM_DIR="$PWD/wamr/core/deps/llvm/build/lib/cmake/llvm"
