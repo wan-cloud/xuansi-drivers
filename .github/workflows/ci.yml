@@ -71,7 +71,8 @@ jobs:
           print("manifest pins match")
           EOF
           tar -xzf "$TOOLCHAIN_ROOT/wamrc-asset.tar.gz" -C "$TOOLCHAIN_ROOT/wamrc-install"
-          targets="$("$TOOLCHAIN_ROOT/wamrc-install/wamrc" --target=help 2>&1)"
+          # wamrc --target=help exits 1 by design — swallow it, grep decides
+          targets="$("$TOOLCHAIN_ROOT/wamrc-install/wamrc" --target=help 2>&1 || true)"
           echo "$targets" | grep -q "xtensa"
           echo "wamrc asset tier: OK (LLVM source build skipped)"
 
