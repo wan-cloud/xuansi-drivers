@@ -8,9 +8,11 @@ they drive GPIO/SPI/camera hardware through a small frozen host API.
 
 Current contents: `hello@1.0.0` — the ABI's reference module (full
 host-surface tour: echo/add marshalling, GPIO, timing, stream, SPI
-loopback, camera frame) — and `ledwatch@1.0.0` — the ABI's first
+loopback, camera frame) — `ledwatch@1.0.0` — the ABI's first
 `algorithm` module (camera frame → LED on/off region detection; see
-"ledwatch" below).
+"ledwatch" below) — and `st7789@1.0.0` — the ABI's first `driver`
+module (ST7789V 240x240 TFT panel over CS-less SPI; see "st7789"
+below).
 
 ## Module ABI (abi = 1, frozen)
 
@@ -91,6 +93,52 @@ set (~627KB: frame + label map + per-label arrays) plus the wasm
 stack. One ledwatch + one hello co-load fit the board's 1MB WAMR
 pool; two ledwatch instances do not (the loader refuses with an
 honest out-of-memory error).
+
+## st7789 (driver module)
+
+`st7789@1.0.0` drives the bench's ST7789V 240x240 TFT panel — the
+first `driver` module: Lua asks, the module drives real hardware
+(SPI + GPIO) through the frozen host table. Board facts compiled in:
+SCL=41, SDA(MOSI)=42, RES=47, DC=21, backlight tied to 3V3, **no CS**
+(the bus is dedicated to the panel — exactly the abi=1 CS-less
+engine, `no_cs=1`).
+
+```lua
+bench.wasm.call("st7789", "init", {x_offset=0, mode=3, invon=true})
+bench.wasm.call("st7789", "clear", 0xF800)       -- solid red
+bench.wasm.call("st7789", "pattern", "border")   -- offset probe
+bench.wasm.call("st7789", "blit", buf_off)       -- full frame (115,200B)
+bench.wasm.call("st7789", "deinit")
+```
+
+- **init cfg** (all optional): `x_offset` 0..80 clamped — the glass
+  start offset. Geometry: the ST7789V RAM is 240 sources (CASET) x 320
+  gates (RASET); a 240x240 glass bonds all 240 sources and 240 of the
+  320 gates, so the panel-specific offset lands on **RASET** at
+  MADCTL=0x00 portrait (the "x offset 80" lore from landscape-default
+  libraries is the same offset after an axis swap). `mode` 0..3
+  (default 3 = CPOL1/CPHA2, the ST7789 4-line sample edge);
+  `invon` (default true — the common 240x240 IPS glass needs display
+  inversion for true colors). ~250ms of delays inside one call.
+- **Wire order**: frames are RGB565 **hi byte first** — the same order
+  the GC2145 camera delivers, so a QVGA crop can be blitted verbatim.
+  Full frame = 115,200B in 29 `spi_xfer` chunks (engine cap 4096B).
+- **patterns**: `full` (white, fb path) / `border` (four 8px white
+  partial-window strips at the glass edge — the offset probe: flush at
+  the edge = right candidate, inset ~80 rows = wrong) / `quad` (R/G/B/W
+  quadrants) / `red_rect` (black + centered 100x100 red). Every draw op
+  returns `{fill_ms, xfer_ms, total_ms, bytes, chunks}` measured with
+  `millis()` — under fast-interp the wasm-side fill loop dominates,
+  the engine moves the bytes DMA-side.
+- **deinit** sleeps the panel but keeps the spi/gpio claims (abi=1 has
+  no release host fn) — `session_reset` of the loader session releases
+  them, like every wasm claim. A held spi slot makes `init` raise the
+  host's rt exception (owner conflict) — the conflict vector is pinned
+  natively (T14) and on the board (HIL S50).
+- Errors are clean `{error=...}` maps (draw-before-init, blit bounds,
+  unknown pattern kind); host-level refusals surface as rt exceptions.
+- st7789 uses the default 256KB initial memory (fb 115KB + stage/out/
+  heap + the wasm stack) — hello's budget class.
 
 ## Repository layout
 
