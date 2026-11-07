@@ -1,0 +1,64 @@
+name: toolchain
+
+# Builds the pinned xtensa wamrc from source and publishes it as the
+# `toolchain-v1` release asset, so CI (and anyone else) can skip the
+# ~55-minute LLVM build. Manual only: re-run when a pin changes (and
+# then bump the tag / asset name).
+on:
+  workflow_dispatch:
+
+env:
+  WAMR_COMMIT: 47c7c85ac21f240a878026af603e032065d183fb          # tag WAMR-2.4.0
+  XTENSA_LLVM_COMMIT: 344b928e67bfc1d07cb150609c55548e86a9bf19   # espressif/llvm-project xtensa_release_18.1.2
+  WASI_SDK_VERSION: "24.0"
+  WASI_SDK_SHA256: c6c38aab56e5de88adf6c1ebc9c3ae8da72f88ec2b656fb024eda8d4167a0bc5
+  ASSET_NAME: wamrc-2.4.0-xtensa-18.1.2-linux-x64.tar.gz
+
+permissions:
+  contents: write   # release create/upload
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: build wamrc from pinned sources
+        run: tools/build-wamrc.sh "$PWD/.toolchain/wamrc-install"
+
+      - name: package asset + manifest
+        run: |
+          set -eux
+          cd .toolchain/wamrc-install
+          tar -czf "../../$ASSET_NAME" wamrc
+          cd ../..
+          wamrc_sha=$(sha256sum .toolchain/wamrc-install/wamrc | cut -d' ' -f1)
+          asset_sha=$(sha256sum "$ASSET_NAME" | cut -d' ' -f1)
+          runner_image=$(. /etc/os-release && echo "$PRETTY_NAME")
+          cat > manifest.json <<EOF
+          {
+            "name": "$ASSET_NAME",
+            "wamrc_sha256": "$wamrc_sha",
+            "asset_sha256": "$asset_sha",
+            "esp_llvm_sha": "$XTENSA_LLVM_COMMIT",
+            "wamr_sha": "$WAMR_COMMIT",
+            "wasi_sdk_version": "$WASI_SDK_VERSION",
+            "wasi_sdk_tarball_sha256": "$WASI_SDK_SHA256",
+            "built": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "runner_os": "$RUNNER_OS",
+            "runner_image": "$runner_image"
+          }
+          EOF
+          cat manifest.json
+
+      - name: attach to the toolchain-v1 release (create if absent)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eux
+          gh release view toolchain-v1 --repo "$GITHUB_REPOSITORY" \
+            || gh release create toolchain-v1 --repo "$GITHUB_REPOSITORY" \
+                 --title "toolchain-v1: xtensa wamrc (WAMR-2.4.0 + espressif llvm xtensa_release_18.1.2)" \
+                 --notes "Built by the toolchain workflow from pinned sources: WAMR $WAMR_COMMIT + espressif/llvm-project $XTENSA_LLVM_COMMIT. See manifest.json for hashes. Pairs with wasi-sdk $WASI_SDK_VERSION."
+          gh release upload toolchain-v1 "$ASSET_NAME" manifest.json --clobber --repo "$GITHUB_REPOSITORY"
