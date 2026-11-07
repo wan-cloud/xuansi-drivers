@@ -132,11 +132,18 @@ void xuansi_native_init(uint8_t *base);
  * pins_valid) — the frozen doc's "mosi/miso=-1 = absent" convention is
  * NOT implemented there (rc=-3 "pin banned/invalid/duplicate"; the
  * on-board B10-T6 conflict vector hit it). This module therefore passes
- * a legal UNWIRED MISO: pin 13, the bench.spi loopback default, nothing
- * connected on this rig. Tx-only transfers (rcap=0) never read it; the
- * only cost is that pin 13 is claimed by owner=wasm while the driver
- * is initialized. */
-#define PIN_MISO   13u
+ * a legal UNWIRED MISO: pin 14 (fix-round-1: pin 13 is the camera
+ * PCLK — xs_camera.c claims 4-13,15-18, so a 13 here made st7789 and
+ * the camera mutually exclusive and T7's camera+screen closed loop
+ * impossible; 14 is the only free pin outside the camera epoch's set
+ * besides this bus's own 21/41/42/47, the 1<->2 LED loop, and the
+ * onboard WS2812 on 48. Nothing is wired to 14 — the old b7 loopback
+ * fixture era used 12<->13 as its hardware loop, with 14 as a merely
+ * assignable sclk). Tx-only transfers (rcap=0) never read MISO.
+ * Note the pin claim is NOT init-scoped: the engine holds it for the
+ * module's whole loaded lifetime (owner=wasm) — released only by
+ * session_reset(vm) / vm.reopen, like every wasm claim. */
+#define PIN_MISO   14u
 #define SPI_SLOT   0u           /* SPI2 */
 #define SPI_HZ     40000000u    /* brief target; engine cap 80MHz */
 #define DEF_MODE   3u           /* CPOL=1/CPHA=2 — ST7789 4-line sample edge */

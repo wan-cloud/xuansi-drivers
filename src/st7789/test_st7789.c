@@ -534,13 +534,13 @@ int main(void)
         /* first event = spi_config with the board pins */
         ok = ev_n >= 1 && evs[0].type == 'C' && evs[0].a == 0
           && evs[0].b == 41 && evs[0].c == 40000000
-          && evs[0].d == 42 && (int32_t)evs[0].e == 13
+          && evs[0].d == 42 && (int32_t)evs[0].e == 14
           && evs[0].f == ((3u << 1) | 1u);
         snprintf(detail, sizeof detail,
                  "C(slot=%u sclk=%u hz=%u mosi=%u miso=%d f=%u)",
                  evs[0].a, evs[0].b, evs[0].c, evs[0].d,
                  (int32_t)evs[0].e, evs[0].f);
-        check(ok, "T03b spi_config(0,41,40MHz,42,13,mode3,no_cs1) first",
+        check(ok, "T03b spi_config(0,41,40MHz,42,14,mode3,no_cs1) first",
               detail);
 
         /* reset pulse */
