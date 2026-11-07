@@ -13,6 +13,8 @@ env:
   WASI_SDK_VERSION: "24.0"
   WASI_SDK_SHA256: c6c38aab56e5de88adf6c1ebc9c3ae8da72f88ec2b656fb024eda8d4167a0bc5
   ASSET_NAME: wamrc-2.4.0-xtensa-18.1.2-linux-x64.tar.gz
+  LLVM_CACHE_KEY: toolchain-llvm-344b928e67bfc1d07cb150609c55548e86a9bf19
+  LLVM_TREE: .toolchain/wamrc-src/wamr/core/deps/llvm/build
 
 permissions:
   contents: write   # release create/upload
@@ -24,8 +26,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: build wamrc from pinned sources
-        run: tools/build-wamrc.sh "$PWD/.toolchain/wamrc-install"
+      # The LLVM tree is the ~50-minute part. A re-dispatch (or a run
+      # after a later step failed) restores it instead of repaying.
+      - name: restore the LLVM build tree
+        id: llvm-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.LLVM_TREE }}
+          key: ${{ env.LLVM_CACHE_KEY }}
+
+      - name: build LLVM (only on cache miss)
+        if: steps.llvm-cache.outputs.cache-hit != 'true'
+        run: tools/build-wamrc.sh llvm "$PWD/.toolchain/wamrc-install"
+
+      - name: save the LLVM build tree
+        if: steps.llvm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.LLVM_TREE }}
+          key: ${{ env.LLVM_CACHE_KEY }}
+
+      - name: build wamrc
+        run: tools/build-wamrc.sh wamrc "$PWD/.toolchain/wamrc-install"
 
       - name: package asset + manifest
         run: |
