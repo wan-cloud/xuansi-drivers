@@ -31,13 +31,16 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.TOOLCHAIN_ROOT }}/wamrc-install
-          key: wamrc-WAMR-2.4.0-xtensa-18.1.2-v1
+          key: wamrc-WAMR-2.4.0-xtensa-18.1.2-v2
 
       # Prebuilt wamrc releases lack the xtensa backend, so it is built
       # from source once per cache key (~1h): WAMR-2.4.0 with the
       # espressif/llvm-project xtensa_release_18.1.2 LLVM, then
       # wamr-compiler linked against it. Same recipe as the frozen local
-      # toolchain (see README "Toolchain").
+      # toolchain (see README "Toolchain"). NOTE: the espressif fork
+      # registers Xtensa as an EXPERIMENTAL target — it must be pulled in
+      # via LLVM_EXPERIMENTAL_TARGETS_TO_BUILD (adding it to
+      # LLVM_TARGETS_TO_BUILD fatals: not in LLVM_ALL_TARGETS).
       - name: build wamrc from pinned sources (cache miss only)
         if: steps.wamrc-cache.outputs.cache-hit != 'true'
         run: |
@@ -54,6 +57,7 @@ jobs:
           cmake -G Ninja -S wamr/core/deps/llvm/llvm -B wamr/core/deps/llvm/build \
             -DCMAKE_BUILD_TYPE=Release \
             -DLLVM_TARGETS_TO_BUILD="AArch64;ARM;Mips;RISCV;X86" \
+            -DLLVM_EXPERIMENTAL_TARGETS_TO_BUILD=Xtensa \
             -DCMAKE_CXX_FLAGS="-include cstdint" \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           ninja -C wamr/core/deps/llvm/build
@@ -64,7 +68,9 @@ jobs:
           ninja -C wamr/wamr-compiler/build
           mkdir -p "$TOOLCHAIN_ROOT/wamrc-install"
           cp wamr/wamr-compiler/build/wamrc "$TOOLCHAIN_ROOT/wamrc-install/wamrc"
-          "$TOOLCHAIN_ROOT/wamrc-install/wamrc" --version
+          targets="$("$TOOLCHAIN_ROOT/wamrc-install/wamrc" --target=help 2>&1)"
+          echo "$targets"
+          echo "$targets" | grep -q "xtensa" || { echo "wamrc lacks the xtensa backend" >&2; exit 1; }
 
       - name: build all modules
         run: |
@@ -72,14 +78,23 @@ jobs:
           export WAMRC="$TOOLCHAIN_ROOT/wamrc-install/wamrc"
           ./build.sh
 
-      - name: artifacts match the committed ones (hard gate)
+      - name: deliverable artifacts match the committed ones (hard gate; .aot advisory)
         run: |
-          if ! git diff --quiet -- modules/; then
-            git diff --stat -- modules/
-            echo "ERROR: freshly built artifacts differ from the committed ones" >&2
+          # Deliverables (.wasm, what index.json files[] lists) must be
+          # byte-identical. The auxiliary .aot depends on the wamrc build
+          # environment; its committed hash is provenance recorded in
+          # meta.json and verified advisory (cross-wamrc-build byte
+          # determinism is not asserted).
+          if ! git diff --quiet -- modules/ ':(exclude)*.aot'; then
+            git diff --stat -- modules/ ':(exclude)*.aot'
+            echo "ERROR: freshly built deliverable artifacts differ from the committed ones" >&2
             exit 1
           fi
-          echo "build: outputs are byte-identical to the committed artifacts"
+          if ! git diff --quiet -- modules/; then
+            echo "note: auxiliary .aot differs from the committed copy (advisory; meta.json hash stands):"
+            git diff --stat -- modules/
+          fi
+          echo "build: deliverable outputs are byte-identical to the committed ones"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -105,7 +120,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.TOOLCHAIN_ROOT }}/wamrc-install
-          key: wamrc-WAMR-2.4.0-xtensa-18.1.2-v1
+          key: wamrc-WAMR-2.4.0-xtensa-18.1.2-v2
 
       - name: rebuild from scratch and compare hashes vs index.json / meta.json
         run: |
