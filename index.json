@@ -14,6 +14,20 @@
         }
       ],
       "src_commit": "3c08dfe8080a4e222ddd63057af1dd03f240bb61"
+    },
+    {
+      "name": "ledwatch",
+      "kind": "algorithm",
+      "version": "1.0.0",
+      "abi": 1,
+      "files": [
+        {
+          "path": "modules/ledwatch/1.0.0/ledwatch.wasm",
+          "sha256": "9bee5f3cbdea3a1cc8e98d030c985f4975d0d63aa54a9ad9d176a54c5aabee69",
+          "bytes": 7518
+        }
+      ],
+      "src_commit": "f004480e2971da562b44a8cb6094047f40371665"
     }
   ]
 }
