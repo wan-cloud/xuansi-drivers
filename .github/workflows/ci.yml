@@ -65,7 +65,7 @@ jobs:
             -DCMAKE_BUILD_TYPE= \
             -DCMAKE_CXX_FLAGS="-include cstdint" \
             -DLLVM_DIR="$PWD/wamr/core/deps/llvm/build/lib/cmake/llvm"
-          ninja -C wamr/wamr-compiler/build
+          cmake --build wamr/wamr-compiler/build -j"$(nproc)"
           mkdir -p "$TOOLCHAIN_ROOT/wamrc-install"
           cp wamr/wamr-compiler/build/wamrc "$TOOLCHAIN_ROOT/wamrc-install/wamrc"
           targets="$("$TOOLCHAIN_ROOT/wamrc-install/wamrc" --target=help 2>&1)"
