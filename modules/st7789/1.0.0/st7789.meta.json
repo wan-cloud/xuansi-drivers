@@ -1,0 +1,80 @@
+{
+  "name": "st7789",
+  "kind": "driver",
+  "version": "1.0.0",
+  "abi": 1,
+  "src_commit": "ea394a2b95a1fe82730a06e6b1bd890ae220f2af",
+  "src": "src/st7789/st7789.c",
+  "imports": [
+    "xuansi.spi_config",
+    "xuansi.spi_xfer",
+    "xuansi.gpio_set",
+    "xuansi.delay_ms",
+    "xuansi.millis"
+  ],
+  "entries": [
+    {
+      "fn": "xuansi_abi",
+      "signature": "() -> u32",
+      "desc": "abi version gate; the loader calls it at instantiate and refuses anything != 1"
+    },
+    {
+      "fn": "xuansi_alloc",
+      "signature": "(u32 n) -> u32",
+      "desc": "linear-memory offset for the host-written msgpack args; 0 = refusal; <=128B calls reuse one fixed slot (§3.1)"
+    },
+    {
+      "fn": "init",
+      "signature": "[cfg?] -> {ok, x_offset, mode, invon, ms}",
+      "desc": "spi_config(slot0, SCL=41, 40MHz, MOSI=42, miso absent, mode, no_cs=1) + hardware RES pulse + SLPOUT/COLMOD(16bit)/MADCTL(0x00)/INVON/CASET/RASET/DISPON. cfg keys optional: x_offset 0..80 clamped (default 0 — the glass start offset; lands on RASET at MADCTL=0x00 since a 240x240 glass bonds all 240 sources and 240 of 320 gates), mode 0..3 clamped (default 3 = CPOL1/CPHA2, the ST7789 4-line sample edge), invon bool (default true — common 240x240 IPS glass needs inversion for true colors; eyeball-tunable). ~250ms of delay_ms inside one call. A held spi slot surfaces as the host's rt exception (owner conflict)."
+    },
+    {
+      "fn": "clear",
+      "signature": "[color565?] -> {ok, bytes, chunks, fill_ms, xfer_ms, total_ms}",
+      "desc": "fb fill (wire-order RGB565 hi byte first) + full-frame stream; color default 0 (black); 115,200B in 29 spi_xfer chunks (engine cap 4096B/xfer)."
+    },
+    {
+      "fn": "blit",
+      "signature": "[buf_off?] -> {ok, bytes, chunks, xfer_ms, total_ms}",
+      "desc": "stream one full frame (115,200B wire-order RGB565) from linear memory at buf_off; 0/absent = the module fb (pure re-stream, the SPI timing path). Nonzero must satisfy 8 <= buf_off and buf_off+115200 <= 262144, else {error='blit offset out of bounds'}. Same byte order as camera RGB565 frames (hi byte first) — a QVGA crop can be blitted verbatim."
+    },
+    {
+      "fn": "pattern",
+      "signature": "[kind] -> {ok, kind, windows, bytes, chunks, fill_ms, xfer_ms, total_ms}",
+      "desc": "kind: 'full' solid white (fb path); 'border' four 8px white partial-window strips at the glass edge (offset probe: flush at edge = x_offset right, inset ~80 rows = wrong candidate; interior untouched); 'quad' 120x120 quadrants TL=red TR=green BL=blue BR=white (partial windows; orientation/RGB-order eyeball); 'red_rect' black frame + centered 100x100 red at (70,70) (fb path). Unknown/missing kind -> {error='unknown pattern kind' / 'pattern kind required'}. Partial-window kinds report fill_ms 0 (stage fills counted in xfer_ms)."
+    },
+    {
+      "fn": "deinit",
+      "signature": "[] -> {ok, ms}",
+      "desc": "DISPOFF + 20ms + SLPIN (panel to sleep). The spi slot and RES/DC pin claims REMAIN (abi=1 has no release host fn) — released by session_reset(loader) / vm.reopen like every wasm claim."
+    }
+  ],
+  "linear_memory": {
+    "initial_bytes": 262144,
+    "max_bytes": 1048576,
+    "note": "4 wasm pages: fb 115200 + stage 4096 + out 2048 + heap 8192 + args 128 + cmd 8 ~= 132KB + wasm-ld 64KB stack. Same budget class as hello; co-loads with ledwatch in the 1MB WAMR pool."
+  },
+  "hardware": {
+    "panel": "ST7789V 240x240 IPS, 7-pin module, NO CS (bus dedicated)",
+    "pins": "SCL=41 SDA(MOSI)=42 RES=47 DC=21 BLK=3V3 (always lit)",
+    "bus": "SPI slot 0 @ 40MHz, mode 3 default (cfg), CS-less (no_cs=1; abi=1 has no CS bus)",
+    "offset_verdict": "x_offset default 0 — pending the B10-T6 on-board border probe (both 0 and 80 drawn; the flush-at-edge candidate wins; if 80 wins, the default flips in a rebuild with this note updated)"
+  },
+  "deliverable": {
+    "path": "modules/st7789/1.0.0/st7789.wasm",
+    "sha256": "f3a29ed713c0f59c57ac1523a9da7601082df6af1d5daedd563cda2fe6f03cff",
+    "bytes": 12538
+  },
+  "auxiliary": [
+    {
+      "path": "modules/st7789/1.0.0/st7789.aot",
+      "sha256": "f02cdce0123c7bcb242ab6f84935a24ebba074afefdaf39efb88883e47451343",
+      "bytes": 29604,
+      "note": "wamrc xtensa/esp32s3 output, hash-recorded for provenance. NOT deployable on the current board stack: the loader honestly refuses .aot execution (upstream ESP32-S3 AOT-in-PSRAM defect). Future-ready; never listed in index.json files[]."
+    }
+  ],
+  "toolchain": {
+    "wasi-sdk": "24.0 (LLVM 18.1.2)",
+    "wamrc": "WAMR-2.4.0 built against espressif/llvm-project xtensa_release_18.1.2"
+  }
+}
