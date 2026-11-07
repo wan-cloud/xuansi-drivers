@@ -3,7 +3,7 @@
   "kind": "driver",
   "version": "1.0.0",
   "abi": 1,
-  "src_commit": "ea394a2b95a1fe82730a06e6b1bd890ae220f2af",
+  "src_commit": "42b1ea4657830c495ef9f111752d6d542ec6024b",
   "src": "src/st7789/st7789.c",
   "imports": [
     "xuansi.spi_config",
@@ -26,7 +26,7 @@
     {
       "fn": "init",
       "signature": "[cfg?] -> {ok, x_offset, mode, invon, ms}",
-      "desc": "spi_config(slot0, SCL=41, 40MHz, MOSI=42, MISO=13 (legal unwired pin — the v1 engine rejects -1: pins_valid wants 0..47 on all three bus pins, the frozen doc's '-1=absent' is not implemented there), mode, no_cs=1) + hardware RES pulse + SLPOUT/COLMOD(16bit)/MADCTL(0x00)/INVON/CASET/RASET/DISPON. cfg keys optional: x_offset 0..80 clamped (default 0 — the glass start offset; lands on RASET at MADCTL=0x00 since a 240x240 glass bonds all 240 sources and 240 of 320 gates), mode 0..3 clamped (default 3 = CPOL1/CPHA2, the ST7789 4-line sample edge), invon bool (default true — common 240x240 IPS glass needs inversion for true colors; eyeball-tunable). ~250ms of delay_ms inside one call. A held spi slot surfaces as the host's rt exception (owner conflict)."
+      "desc": "spi_config(slot0, SCL=41, 40MHz, MOSI=42, MISO=14 (legal unwired pin — the v1 engine rejects -1: pins_valid wants 0..47 on all three bus pins, the frozen doc's '-1=absent' is not implemented there; fix-round-1 moved 13->14: 13 is the camera PCLK, and the engine holds the claim for the module's whole loaded lifetime, so MISO=13 made st7789 and the camera mutually exclusive — 14 is free outside the camera epoch's 4-13,15-18), mode, no_cs=1) + hardware RES pulse + SLPOUT/COLMOD(16bit)/MADCTL(0x00)/INVON/CASET/RASET/DISPON. cfg keys optional: x_offset 0..80 clamped (default 0 — the glass start offset; lands on RASET at MADCTL=0x00 since a 240x240 glass bonds all 240 sources and 240 of 320 gates), mode 0..3 clamped (default 3 = CPOL1/CPHA2, the ST7789 4-line sample edge), invon bool (default true — common 240x240 IPS glass needs inversion for true colors; eyeball-tunable). ~250ms of delay_ms inside one call. A held spi slot surfaces as the host's rt exception (owner conflict)."
     },
     {
       "fn": "clear",
@@ -57,18 +57,18 @@
   "hardware": {
     "panel": "ST7789V 240x240 IPS, 7-pin module, NO CS (bus dedicated)",
     "pins": "SCL=41 SDA(MOSI)=42 RES=47 DC=21 BLK=3V3 (always lit)",
-    "bus": "SPI slot 0 @ 40MHz, mode 3 default (cfg), CS-less (no_cs=1; abi=1 has no CS bus); MISO=13 legal-unwired (v1 engine rejects -1 — doc-vs-engine discrepancy recorded in the B10-T6 report)",
-    "offset_verdict": "x_offset default 0 — pending the B10-T6 on-board border probe (both 0 and 80 drawn; the flush-at-edge candidate wins; if 80 wins, the default flips in a rebuild with this note updated)"
+    "bus": "SPI slot 0 @ 40MHz, mode 3 default (cfg), CS-less (no_cs=1; abi=1 has no CS bus); MISO=14 legal-unwired (v1 engine rejects -1 — doc-vs-engine discrepancy recorded in the B10-T6 report; fix-round-1: was 13 = camera PCLK, mutually exclusive with camera; 14 free, claim held for module lifetime)",
+    "offset_verdict": "x_offset=0 CONFIRMED by owner eyeball 2026-11-08: border pattern flush to the panel edges, white as designed (the x_offset=80 candidate would show the frame inset ~80 rows)"
   },
   "deliverable": {
     "path": "modules/st7789/1.0.0/st7789.wasm",
-    "sha256": "0c95870c422f048c5a41e0a3b722286ad91665458c348941aedd622bd076b81a",
+    "sha256": "3ab5f5149f0db79953a80404fcf19685b3f3b123f2a6155eaa352acfe1ccbf73",
     "bytes": 12538
   },
   "auxiliary": [
     {
       "path": "modules/st7789/1.0.0/st7789.aot",
-      "sha256": "8794a4a2a92e8c2f96bbb7cba95ee81d4bfa4facaa7161b5e98c828d24bf8b60",
+      "sha256": "0834ad8679837b664468ee8b9bdc1405c6bad15a4e58f454f2acbc7d32ee733b",
       "bytes": 29452,
       "note": "wamrc xtensa/esp32s3 output, hash-recorded for provenance. NOT deployable on the current board stack: the loader honestly refuses .aot execution (upstream ESP32-S3 AOT-in-PSRAM defect). Future-ready; never listed in index.json files[]."
     }

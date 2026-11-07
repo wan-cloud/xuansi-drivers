@@ -37,11 +37,11 @@
       "files": [
         {
           "path": "modules/st7789/1.0.0/st7789.wasm",
-          "sha256": "0c95870c422f048c5a41e0a3b722286ad91665458c348941aedd622bd076b81a",
+          "sha256": "3ab5f5149f0db79953a80404fcf19685b3f3b123f2a6155eaa352acfe1ccbf73",
           "bytes": 12538
         }
       ],
-      "src_commit": "ea394a2b95a1fe82730a06e6b1bd890ae220f2af"
+      "src_commit": "42b1ea4657830c495ef9f111752d6d542ec6024b"
     }
   ]
 }
