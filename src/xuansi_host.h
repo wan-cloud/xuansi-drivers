@@ -56,8 +56,13 @@ XUANSI_IMPORT("xuansi", "gpio_get")
 extern void xuansi_gpio_get(uint32_t pin, uint32_t *out);
 #define gpio_get xuansi_gpio_get
 
-/* SPI master bus self-configuration (slot=0|1; mosi/miso=-1 = absent;
- * mode 0..3; no_cs!=0 -> CS-less, no_cs=0 is REFUSED on abi=1 — the CS
+/* SPI master bus self-configuration (slot=0|1; mode 0..3; mosi/miso
+ * must be LEGAL pins 0..47 — the v1 engine's pins_valid wants that on
+ * all three bus pins, so the frozen doc's "mosi/miso=-1 = absent"
+ * convention is NOT actually accepted (rc=-3 "pin banned/invalid/
+ * duplicate"; the on-board B10-T6 conflict vector hit it): pass a
+ * legal UNWIRED pin instead (st7789 uses 14); -1 semantics deferred
+ * to abi=2. no_cs!=0 -> CS-less, no_cs=0 is REFUSED on abi=1 — the CS
  * bus is an abi=2 addition). Status 0 is written to *out (non-zero
  * would have raised before returning). */
 XUANSI_IMPORT("xuansi", "spi_config")
