@@ -54,10 +54,14 @@ jobs:
           cmake -G Ninja -S wamr/core/deps/llvm/llvm -B wamr/core/deps/llvm/build \
             -DCMAKE_BUILD_TYPE=Release \
             -DLLVM_TARGETS_TO_BUILD="AArch64;ARM;Mips;RISCV;X86" \
+            -DCMAKE_C_FLAGS="-include cstdint" \
+            -DCMAKE_CXX_FLAGS="-include cstdint" \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           ninja -C wamr/core/deps/llvm/build
           cmake -S wamr/wamr-compiler -B wamr/wamr-compiler/build \
             -DCMAKE_BUILD_TYPE= \
+            -DCMAKE_C_FLAGS="-include cstdint" \
+            -DCMAKE_CXX_FLAGS="-include cstdint" \
             -DLLVM_DIR="$PWD/wamr/core/deps/llvm/build/lib/cmake/llvm"
           ninja -C wamr/wamr-compiler/build
           mkdir -p "$TOOLCHAIN_ROOT/wamrc-install"
