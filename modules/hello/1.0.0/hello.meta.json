@@ -1,0 +1,40 @@
+{
+  "name": "hello",
+  "kind": "driver",
+  "version": "1.0.0",
+  "abi": 1,
+  "src_commit": "3c08dfe8080a4e222ddd63057af1dd03f240bb61",
+  "src": "src/hello/hello.c",
+  "entries": [
+    { "fn": "xuansi_abi", "signature": "() -> u32", "desc": "abi version gate; the loader calls it at instantiate and refuses anything != 1" },
+    { "fn": "xuansi_alloc", "signature": "(u32 n) -> u32", "desc": "linear-memory offset for the host-written msgpack args; 0 = refusal" },
+    { "fn": "echo", "signature": "args... -> args...", "desc": "byte-level msgpack round-trip of the argument array" },
+    { "fn": "add", "signature": "[a, b] -> [a+b]", "desc": "module-side msgpack decode+encode proof" },
+    { "fn": "gpio_echo", "signature": "[out_pin?, in_pin?] -> [hi, lo]", "desc": "drive out (default 1), read in (default 2), drive low, read again" },
+    { "fn": "now", "signature": "() -> [ms]", "desc": "boot milliseconds via the out-param convention" },
+    { "fn": "now2x", "signature": "() -> [ms, ms, ms]", "desc": "three consecutive live snapshots (out-param landing proof)" },
+    { "fn": "timed_delay", "signature": "() -> [dt_ms]", "desc": "millis -> delay_ms(120) -> millis" },
+    { "fn": "delay_wrap", "signature": "() -> raises", "desc": "delay(100) then delay(0xFFFFFFF8): pins the host budget-cap refusal (no u32 wrap bypass)" },
+    { "fn": "stream_out", "signature": "() -> [sent]", "desc": "stream_send an 8-byte sample (host stamps ch=2 + module name)" },
+    { "fn": "spi_selftest", "signature": "() -> [rx==tx]", "desc": "self-configure SPI loopback (sclk=14, mosi=12, miso=13, 1MHz, mode 0, CS-less) + full-duplex 8B" },
+    { "fn": "spi_neg", "signature": "() -> raises", "desc": "spi_config(no_cs=0): a CS bus is refused at abi=1 (negative proof of the host exception face)" },
+    { "fn": "cam_frame", "signature": "() -> [w, h, len]", "desc": "camera_info probe + one QVGA RGB565 frame; the camera must already be on (caller's responsibility)" }
+  ],
+  "deliverable": {
+    "path": "modules/hello/1.0.0/hello.wasm",
+    "sha256": "959b20ef4e9e9fef01cce6c9abb2675c633bb736d1d86917f26377352a1b9947",
+    "bytes": 5691
+  },
+  "auxiliary": [
+    {
+      "path": "modules/hello/1.0.0/hello.aot",
+      "sha256": "b78c4b76aae2721d88875ddb73734a20c634bc2477ef08f114b436042040bbfa",
+      "bytes": 9492,
+      "note": "wamrc xtensa/esp32s3 output, hash-recorded for provenance. NOT deployable on the current board stack: the loader honestly refuses .aot execution (upstream ESP32-S3 AOT-in-PSRAM defect). Future-ready; never listed in index.json files[]."
+    }
+  ],
+  "toolchain": {
+    "wasi-sdk": "24.0 (LLVM 18.1.2)",
+    "wamrc": "WAMR-2.4.0 built against espressif/llvm-project xtensa_release_18.1.2"
+  }
+}

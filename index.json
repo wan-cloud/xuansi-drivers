@@ -1,0 +1,19 @@
+{
+  "index_ver": 1,
+  "modules": [
+    {
+      "name": "hello",
+      "kind": "driver",
+      "version": "1.0.0",
+      "abi": 1,
+      "files": [
+        {
+          "path": "modules/hello/1.0.0/hello.wasm",
+          "sha256": "959b20ef4e9e9fef01cce6c9abb2675c633bb736d1d86917f26377352a1b9947",
+          "bytes": 5691
+        }
+      ],
+      "src_commit": "3c08dfe8080a4e222ddd63057af1dd03f240bb61"
+    }
+  ]
+}
