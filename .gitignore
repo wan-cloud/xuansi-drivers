@@ -1,0 +1,5 @@
+# local build scratch (build.sh keeps committed artifacts under modules/)
+/out/
+/build/
+*.o
+*.tmp
