@@ -10,6 +10,12 @@ env:
   WAMR_COMMIT: 47c7c85ac21f240a878026af603e032065d183fb   # tag WAMR-2.4.0
   XTENSA_LLVM_COMMIT: 344b928e67bfc1d07cb150609c55548e86a9bf19  # espressif/llvm-project, branch xtensa_release_18.1.2
   TOOLCHAIN_ROOT: ${{ github.workspace }}/.toolchain
+  # Prebuilt wamrc asset (toolchain-v1 release, built by toolchain.yml from
+  # the same pins). "pending" until the release lands: the asset tier then
+  # skips itself and CI falls back to the source build below.
+  WAMRC_ASSET_URL: https://github.com/wan-cloud/xuansi-drivers/releases/download/toolchain-v1/wamrc-2.4.0-xtensa-18.1.2-linux-x64.tar.gz
+  WAMRC_MANIFEST_URL: https://github.com/wan-cloud/xuansi-drivers/releases/download/toolchain-v1/manifest.json
+  WAMRC_ASSET_SHA256: pending
 
 jobs:
   build:
@@ -33,6 +39,42 @@ jobs:
           path: ${{ env.TOOLCHAIN_ROOT }}/wamrc-install
           key: wamrc-WAMR-2.4.0-xtensa-18.1.2-v2
 
+      # Asset tier: the toolchain-v1 release carries a wamrc built from
+      # exactly these pins (toolchain.yml). Verified two ways — the
+      # tarball's sha256 against the WAMRC_ASSET_SHA256 literal, and the
+      # release manifest's source SHAs against this workflow's pins —
+      # then the xtensa backend is asserted before use. Any failure
+      # (absent release, hash drift, pin mismatch) falls through to the
+      # source build below.
+      - name: wamrc from the toolchain-v1 release asset
+        id: wamrc-asset
+        if: env.WAMRC_ASSET_SHA256 != 'pending' && steps.wamrc-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        run: |
+          set -eux
+          mkdir -p "$TOOLCHAIN_ROOT/wamrc-install"
+          curl -fsSL "$WAMRC_ASSET_URL" -o "$TOOLCHAIN_ROOT/wamrc-asset.tar.gz"
+          echo "$WAMRC_ASSET_SHA256  $TOOLCHAIN_ROOT/wamrc-asset.tar.gz" | sha256sum -c -
+          curl -fsSL "$WAMRC_MANIFEST_URL" -o "$TOOLCHAIN_ROOT/wamrc-manifest.json"
+          python3 - "$TOOLCHAIN_ROOT/wamrc-manifest.json" <<'EOF'
+          import json, os, sys
+          m = json.load(open(sys.argv[1]))
+          pins = {
+              "esp_llvm_sha": os.environ["XTENSA_LLVM_COMMIT"],
+              "wamr_sha": os.environ["WAMR_COMMIT"],
+              "wasi_sdk_tarball_sha256": os.environ["WASI_SDK_SHA256"],
+          }
+          for k, want in pins.items():
+              got = m.get(k)
+              if got != want:
+                  sys.exit(f"toolchain-v1 manifest {k}={got} != this workflow's pin {want}")
+          print("manifest pins match")
+          EOF
+          tar -xzf "$TOOLCHAIN_ROOT/wamrc-asset.tar.gz" -C "$TOOLCHAIN_ROOT/wamrc-install"
+          targets="$("$TOOLCHAIN_ROOT/wamrc-install/wamrc" --target=help 2>&1)"
+          echo "$targets" | grep -q "xtensa"
+          echo "wamrc asset tier: OK (LLVM source build skipped)"
+
       # Prebuilt wamrc releases lack the xtensa backend, so it is built
       # from source once per cache key (~1h): WAMR-2.4.0 with the
       # espressif/llvm-project xtensa_release_18.1.2 LLVM, then
@@ -41,8 +83,8 @@ jobs:
       # registers Xtensa as an EXPERIMENTAL target — it must be pulled in
       # via LLVM_EXPERIMENTAL_TARGETS_TO_BUILD (adding it to
       # LLVM_TARGETS_TO_BUILD fatals: not in LLVM_ALL_TARGETS).
-      - name: build wamrc from pinned sources (cache miss only)
-        if: steps.wamrc-cache.outputs.cache-hit != 'true'
+      - name: build wamrc from pinned sources (cache/asset miss only)
+        if: steps.wamrc-cache.outputs.cache-hit != 'true' && steps.wamrc-asset.outcome != 'success'
         run: |
           set -eux
           sudo apt-get update -qq && sudo apt-get install -y -qq ninja-build ccache
