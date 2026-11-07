@@ -68,7 +68,8 @@ jobs:
           cmake --build wamr/wamr-compiler/build -j"$(nproc)"
           mkdir -p "$TOOLCHAIN_ROOT/wamrc-install"
           cp wamr/wamr-compiler/build/wamrc "$TOOLCHAIN_ROOT/wamrc-install/wamrc"
-          targets="$("$TOOLCHAIN_ROOT/wamrc-install/wamrc" --target=help 2>&1)"
+          # wamrc --target=help exits 1 by design — swallow it, grep decides
+          targets="$("$TOOLCHAIN_ROOT/wamrc-install/wamrc" --target=help 2>&1 || true)"
           echo "$targets"
           echo "$targets" | grep -q "xtensa" || { echo "wamrc lacks the xtensa backend" >&2; exit 1; }
 
