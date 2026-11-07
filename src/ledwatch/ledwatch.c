@@ -81,6 +81,7 @@ uint8_t *xuansi_lin_base;
 #define XUANSI_OFF(p)  ((uint32_t)((size_t)(p) - (size_t)xuansi_lin_base))
 #define XUANSI_EXPORT(name) /* native: plain symbol, no wasm attribute */
 #define LIN_OUT_OFF    0x4000u             /* result marshal buffer */
+#define LIN_ARGS_OFF   0x6000u             /* reused args slot (fix1) */
 #define LIN_FRAME_OFF  0x10000u            /* QVGA frame buffer */
 void xuansi_native_init(uint8_t *base);
 #else
@@ -89,13 +90,22 @@ void xuansi_native_init(uint8_t *base);
 #define XUANSI_EXPORT(name) __attribute__((export_name(name)))
 #endif
 
-/* ---- in-linear-memory buffers (bump allocator; offset 0 reserved) ---- */
-
+/* ---- in-linear-memory buffers (bump allocator; offset 0 reserved) ----
+ * fix1 args-slot convention (module-ABI.md §3.1): the host calls
+ * xuansi_alloc on EVERY call-with-args — a bump-only allocator is a hidden
+ * per-call budget (~230 calls at cfg scale) that a polling module exhausts
+ * in minutes. Small args (<= ARGS_SLOT_SZ) therefore reuse one fixed slot;
+ * it is safe because the fw host serializes every wasm call (s_wasm_mu) —
+ * a second call cannot be in flight while the slot's args are unconsumed.
+ * Larger allocations keep the bump arena (one-shot scale). */
 #define HEAP_SZ 8192
+#define ARGS_SLOT_SZ 128
 #ifdef XUANSI_NATIVE_TEST
 static uint32_t heap_off = 8;
+static uint8_t *args_slot;                 /* placed by xuansi_native_init() */
 #else
 static uint8_t heap_buf[HEAP_SZ] __attribute__((aligned(8), unused));
+static uint8_t args_slot[ARGS_SLOT_SZ] __attribute__((aligned(8)));
 static uint32_t heap_off = 8;
 #endif
 
@@ -137,6 +147,7 @@ XUANSI_EXPORT("xuansi_alloc")
 uint32_t xuansi_alloc(uint32_t n)
 {
     if (n == 0 || n > HEAP_SZ) return 0;
+    if (n <= ARGS_SLOT_SZ) return XUANSI_OFF(args_slot);   /* fix1: reuse */
     uint32_t off = (heap_off + 7u) & ~(uint32_t)7u;
     if (off + n > HEAP_SZ) return 0;
     heap_off = off + n;
@@ -438,7 +449,14 @@ uint64_t analyze(uint32_t ptr, uint32_t len)
         }
     }
 
-    /* top-N selection by area (largest first), min_area filter */
+    /* top-N selection by area (largest first), min_area filter.
+     * fix1: a == 0 labels are NON-ROOTS (ghosts) — pass 2 accumulates
+     * lw_area on roots only, so an unmerged-absorbed label keeps area 0.
+     * The old filter (a < mina alone) admitted them at min_area=0, the
+     * stats pass never touched them (no pixel resolves to a non-root),
+     * and the encode divided by n=0 (wasm i32 div-zero trap; bbox
+     * underflow besides). Skipping area-0 keeps min_area=0 as the honest
+     * "no area filter" idiom. */
     uint32_t maxr = (uint32_t)cfg.max_regions;
     uint32_t mina = (uint32_t)cfg.min_area;
     uint16_t top_label[MAX_REGIONS_CAP];
@@ -446,7 +464,7 @@ uint64_t analyze(uint32_t ptr, uint32_t len)
     uint32_t top_n = 0;
     for (uint32_t l = 1; l < next_label; l++) {
         uint32_t a = lw_area[l];
-        if (a < mina) continue;
+        if (a == 0 || a < mina) continue;
         if (top_n == maxr && a <= top_area[top_n - 1]) continue;
         uint32_t j = (top_n < maxr) ? top_n : maxr - 1;
         if (top_n < maxr) top_n++;
@@ -537,6 +555,7 @@ void xuansi_native_init(uint8_t *base)
 {
     xuansi_lin_base = base;
     out_buf = base + LIN_OUT_OFF;
+    args_slot = base + LIN_ARGS_OFF;
     frame_buf = base + LIN_FRAME_OFF;
 }
 #endif

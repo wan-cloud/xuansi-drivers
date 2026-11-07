@@ -28,6 +28,13 @@
 
 #include "ledwatch.c"   /* unity build: the module under test */
 
+/* fix1 RED seam: the args-slot macro arrives with the fix; a test-local
+ * fallback keeps this file compilable against the pre-fix module (the
+ * high-water assertion then fails / the arena exhausts — the RED evidence) */
+#ifndef ARGS_SLOT_SZ
+#define ARGS_SLOT_SZ 128
+#endif
+
 /* ---- stub host state ---- */
 
 static int s_camera_on;
@@ -650,6 +657,84 @@ int main(void)
         uint64_t r = call_analyze("threshold=i:200");
         check(res_decode(r, &res) == 0 && res.n == 1 && res.r[0].area == 2400,
               "T17 uint16-encoded cfg int decoded", "");
+    }
+
+    /* ---- T18 (fix1) merged-label frame + min_area=0: no div-zero trap ----
+     * U-shape forces a pass-1 union: raster order creates two labels (the
+     * arms' tops), the bottom bar merges them — the absorbed label becomes
+     * a NON-ROOT whose lw_area stays 0 (a "ghost"). With min_area=0 the old
+     * top-N filter (a < mina only) let ghosts in; stats never touched them
+     * (no pixel resolves to a non-root) and the encode divided by n=0 ->
+     * wasm i32 div-zero trap (plus bbox underflow). */
+    {
+        stage_reset();
+        canvas_clear(C_BLACK);
+        canvas_rect(C_WHITE, 10, 10, 15, 60);    /* left arm  x=10..24 */
+        canvas_rect(C_WHITE, 50, 10, 15, 60);    /* right arm x=50..64 */
+        canvas_rect(C_WHITE, 10, 55, 55, 15);    /* bottom bar — merges */
+        stage_commit();
+        uint64_t r = call_analyze("min_area=i:0");
+        int dec = res_decode(r, &res);
+        int ok = dec == 0 && res.n == 1
+              && res.r[0].x == 10 && res.r[0].y == 10
+              && res.r[0].w == 55 && res.r[0].h == 60
+              && res.r[0].area == 2175        /* 900+900+825-225-225 */
+              && res.r[0].luma_mean == 255;
+        snprintf(detail, sizeof detail,
+                 "dec=%d n=%d bbox=(%ld,%ld,%ld,%ld) a=%ld",
+                 dec, res.n, res.r[0].x, res.r[0].y, res.r[0].w, res.r[0].h,
+                 res.r[0].area);
+        check(ok, "T18 U-merged ghost label + min_area=0: single region, "
+              "no trap", detail);
+        /* min_area=0 on separated targets: the "no filter" idiom returns
+         * every component, still no ghost */
+        stage_reset();
+        canvas_clear(C_BLACK);
+        canvas_rect(C_WHITE, 20, 30, 60, 40);    /* 2400 */
+        canvas_rect(C_WHITE, 200, 150, 30, 30);  /* 900 */
+        stage_commit();
+        r = call_analyze("min_area=i:0");
+        ok = res_decode(r, &res) == 0 && res.n == 2
+          && res.r[0].area == 2400 && res.r[1].area == 900;
+        check(ok, "T18b min_area=0 separated targets: both, no trap", "");
+    }
+
+    /* ---- T19 (fix1) args-slot budget: polling calls must not exhaust the
+     * bump arena — small args (<=ARGS_SLOT_SZ) reuse a fixed slot; the
+     * bump high-water must be stable across 1000 cfg'd calls ---- */
+    {
+        stage_reset();
+        canvas_clear(C_BLACK);
+        canvas_rect(C_WHITE, 20, 30, 60, 40);
+        stage_commit();
+        uint32_t hw0 = heap_off;         /* module static: same TU */
+        uint64_t r = 0;
+        int i;
+        for (i = 0; i < 1000; i++)
+            r = call_analyze("threshold=i:120,min_area=i:16");
+        int dec = res_decode(r, &res);
+        snprintf(detail, sizeof detail, "hw %u->%u dec=%d n=%d",
+                 hw0, heap_off, dec, res.n);
+        check(dec == 0 && res.n == 1 && res.r[0].area == 2400
+              && heap_off == hw0,
+              "T19 1000 cfg'd analyze calls: results intact, alloc "
+              "high-water stable", detail);
+        /* large args (> slot) still take the bump arena — one-shot path */
+        uint32_t hw1 = heap_off;
+        uint8_t big[256];
+        uint32_t n = build_args(big,
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa=i:1,"   /* 6 x 31-char keys */
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb=i:1,"
+            "cccccccccccccccccccccccccccccc=i:1,"
+            "dddddddddddddddddddddddddddddd=i:1,"
+            "eeeeeeeeeeeeeeeeeeeeeeeeeeeeee=i:1,"
+            "ffffffffffffffffffffffffffffff=i:1");
+        uint32_t off = host_write_args(big, n);
+        r = analyze(off, n);
+        check(n > ARGS_SLOT_SZ && heap_off > hw1
+              && res_decode(r, &res) == 0 && res.n == 1,
+              "T19b args > slot still bump (one-shot), unknown keys ignored",
+              "");
     }
 
     printf("---- test_ledwatch: %d checks, %d fail ----\n", checks, fails);

@@ -202,9 +202,13 @@ int main(void)
     check(xuansi_alloc(0) == 0, "T02a alloc(0) refused", "");
     check(xuansi_alloc(HEAP_SZ + 1) == 0, "T02b alloc(over cap) refused", "");
     uint32_t a1 = xuansi_alloc(8);
-    check(a1 == 8, "T02c first alloc at 8", "");
+    check(a1 == XUANSI_OFF(args_slot),
+          "T02c small args alloc -> fixed args slot (fix1)", "");
     uint32_t a2 = xuansi_alloc(1);
-    check(a2 == 16, "T02d bump is 8-aligned", "");
+    check(a2 == a1, "T02d small allocs reuse the slot (serialized calls)",
+          "");
+    uint32_t a3 = xuansi_alloc(200);
+    check(a3 == 8, "T02e large alloc bumps from 8 (one-shot path)", "");
 
     /* ---- T03 echo: byte-level msgpack round-trip ---- */
     {
@@ -307,6 +311,24 @@ int main(void)
     /* ---- T14 cam_frame with camera off: the not-on refusal propagates ---- */
     {
         EXPECT_TRAP(cam_frame(0, 0), "T14 cam_frame camera-off refusal");
+    }
+
+    /* ---- T15 (fix1) args-slot budget: polling-scale calls stay stable ----
+     * The host calls xuansi_alloc on every call-with-args; a bump-only
+     * allocator is a hidden ~230-call budget. 1000 cfg-scale add calls
+     * must leave the bump high-water untouched (args fit the slot). */
+    {
+        static const uint8_t args[] = { 0x92, 7, 35 };   /* [7,35] */
+        uint32_t hw0 = heap_off;               /* module static: same TU */
+        uint64_t r = 0;
+        for (int i = 0; i < 1000; i++) {
+            uint32_t off = host_write_args(args, sizeof args);
+            r = add(off, sizeof args);
+        }
+        check(res_ints(r, v, 8, &n) == 0 && n == 1 && v[0] == 42
+              && heap_off == hw0,
+              "T15 1000 args-carrying add calls: result intact, alloc "
+              "high-water stable", "");
     }
 
     printf("---- test_hello: %d checks, %d fail ----\n", checks, fails);

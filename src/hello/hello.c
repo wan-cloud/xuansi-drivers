@@ -59,6 +59,7 @@ uint8_t *xuansi_lin_base;                  /* test-owned linear-memory base */
 #define XUANSI_OFF(p)  ((uint32_t)((size_t)(p) - (size_t)xuansi_lin_base))
 #define XUANSI_EXPORT(name) /* native: plain symbol, no wasm attribute */
 #define LIN_OUT_OFF    0x4000u             /* result marshal buffer */
+#define LIN_ARGS_OFF   0x6300u             /* reused args slot (fix1) */
 #define LIN_FRAME_OFF  0x10000u            /* QVGA frame buffer */
 #define LIN_TX_OFF     0x6000u             /* spi_selftest scratch */
 #define LIN_RX_OFF     0x6100u
@@ -71,9 +72,16 @@ void xuansi_native_init(uint8_t *base);
 #endif
 
 /* ---- in-linear-memory marshal buffers (bump allocator; offset 0 is the
- * reserved failure sentinel) ---- */
+ * reserved failure sentinel) ----
+ * fix1 args-slot convention (module-ABI.md §3.1): the host calls
+ * xuansi_alloc on EVERY call-with-args — bump-only is a hidden per-call
+ * budget (~230 calls at small-args scale). Small args (<= ARGS_SLOT_SZ)
+ * reuse one fixed slot; safe because the fw host serializes every wasm
+ * call (s_wasm_mu). Larger allocations keep the bump arena. hello is the
+ * template new modules copy — the convention ships here on purpose. */
 
 #define HEAP_SZ 8192
+#define ARGS_SLOT_SZ 128
 /* Linear-memory anchor (the bump allocator only ever hands out offsets,
  * never touches the array itself — allocated offsets land inside the
  * span this array reserves in linear memory; the unused attribute says
@@ -81,8 +89,10 @@ void xuansi_native_init(uint8_t *base);
 #ifdef XUANSI_NATIVE_TEST
 /* native seam: the test arena backs the span; no anchor needed */
 static uint32_t heap_off = 8;      /* 0 must never be returned (bump from 8) */
+static uint8_t *args_slot;         /* placed by xuansi_native_init() */
 #else
 static uint8_t heap_buf[HEAP_SZ] __attribute__((aligned(8), unused));
+static uint8_t args_slot[ARGS_SLOT_SZ] __attribute__((aligned(8)));
 static uint32_t heap_off = 8;      /* 0 must never be returned (bump from 8) */
 #endif
 
@@ -99,6 +109,7 @@ XUANSI_EXPORT("xuansi_alloc")
 uint32_t xuansi_alloc(uint32_t n)
 {
     if (n == 0 || n > HEAP_SZ) return 0;
+    if (n <= ARGS_SLOT_SZ) return XUANSI_OFF(args_slot);   /* fix1: reuse */
     uint32_t off = (heap_off + 7u) & ~(uint32_t)7u;
     if (off + n > HEAP_SZ) return 0;
     heap_off = off + n;
@@ -186,6 +197,7 @@ void xuansi_native_init(uint8_t *base)
 {
     xuansi_lin_base = base;
     out_buf = base + LIN_OUT_OFF;
+    args_slot = base + LIN_ARGS_OFF;
     frame_buf = base + LIN_FRAME_OFF;
 }
 #endif
