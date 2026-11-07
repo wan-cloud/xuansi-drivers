@@ -1,0 +1,142 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+env:
+  WASI_SDK_URL: https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-24/wasi-sdk-24.0-x86_64-linux.tar.gz
+  WASI_SDK_SHA256: c6c38aab56e5de88adf6c1ebc9c3ae8da72f88ec2b656fb024eda8d4167a0bc5
+  WAMR_COMMIT: 47c7c85ac21f240a878026af603e032065d183fb   # tag WAMR-2.4.0
+  XTENSA_LLVM_COMMIT: 344b928e67bfc1d07cb150609c55548e86a9bf19  # espressif/llvm-project, branch xtensa_release_18.1.2
+  TOOLCHAIN_ROOT: ${{ github.workspace }}/.toolchain
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: wasi-sdk 24.0 (download, verify, extract)
+        run: |
+          mkdir -p "$TOOLCHAIN_ROOT"
+          curl -fsSL "$WASI_SDK_URL" -o "$TOOLCHAIN_ROOT/wasi-sdk.tar.gz"
+          echo "$WASI_SDK_SHA256  $TOOLCHAIN_ROOT/wasi-sdk.tar.gz" | sha256sum -c -
+          tar -xzf "$TOOLCHAIN_ROOT/wasi-sdk.tar.gz" -C "$TOOLCHAIN_ROOT"
+          test -x "$TOOLCHAIN_ROOT/wasi-sdk-24.0-x86_64-linux/bin/clang"
+
+      - name: wamrc binary (cache)
+        id: wamrc-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.TOOLCHAIN_ROOT }}/wamrc-install
+          key: wamrc-WAMR-2.4.0-xtensa-18.1.2-v1
+
+      # Prebuilt wamrc releases lack the xtensa backend, so it is built
+      # from source once per cache key (~1h): WAMR-2.4.0 with the
+      # espressif/llvm-project xtensa_release_18.1.2 LLVM, then
+      # wamr-compiler linked against it. Same recipe as the frozen local
+      # toolchain (see README "Toolchain").
+      - name: build wamrc from pinned sources (cache miss only)
+        if: steps.wamrc-cache.outputs.cache-hit != 'true'
+        run: |
+          set -eux
+          sudo apt-get update -qq && sudo apt-get install -y -qq ninja-build ccache
+          git clone --depth 1 https://github.com/bytecodealliance/wasm-micro-runtime.git wamr
+          git -C wamr checkout "$WAMR_COMMIT"
+          git clone --depth 1 --branch xtensa_release_18.1.2 \
+            https://github.com/espressif/llvm-project.git wamr/core/deps/llvm
+          git -C wamr/core/deps/llvm checkout "$XTENSA_LLVM_COMMIT"
+          cmake -G Ninja -S wamr/core/deps/llvm/llvm -B wamr/core/deps/llvm/build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLVM_TARGETS_TO_BUILD="AArch64;ARM;Mips;RISCV;X86" \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          ninja -C wamr/core/deps/llvm/build
+          cmake -S wamr/wamr-compiler -B wamr/wamr-compiler/build \
+            -DCMAKE_BUILD_TYPE= \
+            -DLLVM_DIR="$PWD/wamr/core/deps/llvm/build/lib/cmake/llvm"
+          ninja -C wamr/wamr-compiler/build
+          mkdir -p "$TOOLCHAIN_ROOT/wamrc-install"
+          cp wamr/wamr-compiler/build/wamrc "$TOOLCHAIN_ROOT/wamrc-install/wamrc"
+          "$TOOLCHAIN_ROOT/wamrc-install/wamrc" --version
+
+      - name: build all modules
+        run: |
+          export WASI_SDK="$TOOLCHAIN_ROOT/wasi-sdk-24.0-x86_64-linux"
+          export WAMRC="$TOOLCHAIN_ROOT/wamrc-install/wamrc"
+          ./build.sh
+
+      - name: artifacts match the committed ones (hard gate)
+        run: |
+          if ! git diff --quiet -- modules/; then
+            git diff --stat -- modules/
+            echo "ERROR: freshly built artifacts differ from the committed ones" >&2
+            exit 1
+          fi
+          echo "build: outputs are byte-identical to the committed artifacts"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: module-artifacts
+          path: modules/
+
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    needs: build   # restores the wamrc cache the build job just saved
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: wasi-sdk 24.0 (download, verify, extract)
+        run: |
+          mkdir -p "$TOOLCHAIN_ROOT"
+          curl -fsSL "$WASI_SDK_URL" -o "$TOOLCHAIN_ROOT/wasi-sdk.tar.gz"
+          echo "$WASI_SDK_SHA256  $TOOLCHAIN_ROOT/wasi-sdk.tar.gz" | sha256sum -c -
+          tar -xzf "$TOOLCHAIN_ROOT/wasi-sdk.tar.gz" -C "$TOOLCHAIN_ROOT"
+          test -x "$TOOLCHAIN_ROOT/wasi-sdk-24.0-x86_64-linux/bin/clang"
+
+      - name: wamrc binary (cache)
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.TOOLCHAIN_ROOT }}/wamrc-install
+          key: wamrc-WAMR-2.4.0-xtensa-18.1.2-v1
+
+      - name: rebuild from scratch and compare hashes vs index.json / meta.json
+        run: |
+          export WASI_SDK="$TOOLCHAIN_ROOT/wasi-sdk-24.0-x86_64-linux"
+          export WAMRC="$TOOLCHAIN_ROOT/wamrc-install/wamrc"
+          ./build.sh --check
+
+      - name: download the build job's artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: module-artifacts
+          path: artifacts-from-build
+
+      - name: independent rebuild must equal the build job's artifacts
+        run: |
+          export WASI_SDK="$TOOLCHAIN_ROOT/wasi-sdk-24.0-x86_64-linux"
+          export WAMRC="$TOOLCHAIN_ROOT/wamrc-install/wamrc"
+          ./build.sh >/dev/null   # same inputs, an independent second build
+          diff -r modules artifacts-from-build
+          echo "verify: intra-CI rebuilds are byte-identical"
+
+  native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: compile and run every native module test (stub host)
+        run: |
+          set -eux
+          found=0
+          for t in src/*/test_*.c; do
+            name=$(basename "$t" .c)
+            gcc -DXUANSI_NATIVE_TEST -Wall -Wextra -Werror \
+              -I "src/$(basename "$(dirname "$t")")" -I src \
+              "$t" -o "/tmp/$name"
+            "/tmp/$name"
+            found=1
+          done
+          test "$found" -eq 1
