@@ -101,7 +101,11 @@ first `driver` module: Lua asks, the module drives real hardware
 (SPI + GPIO) through the frozen host table. Board facts compiled in:
 SCL=41, SDA(MOSI)=42, RES=47, DC=21, backlight tied to 3V3, **no CS**
 (the bus is dedicated to the panel — exactly the abi=1 CS-less
-engine, `no_cs=1`).
+engine, `no_cs=1`). MISO is passed as **pin 13, legal but unwired**:
+the v1 engine's `pins_valid` wants 0..47 on all three bus pins, so the
+frozen doc's "miso=-1 = absent" convention is not actually accepted
+(`rc=-3`, hit and recorded by B10-T6's on-board conflict vector);
+tx-only transfers never read MISO.
 
 ```lua
 bench.wasm.call("st7789", "init", {x_offset=0, mode=3, invon=true})

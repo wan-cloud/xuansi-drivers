@@ -37,7 +37,7 @@
       "files": [
         {
           "path": "modules/st7789/1.0.0/st7789.wasm",
-          "sha256": "f3a29ed713c0f59c57ac1523a9da7601082df6af1d5daedd563cda2fe6f03cff",
+          "sha256": "0c95870c422f048c5a41e0a3b722286ad91665458c348941aedd622bd076b81a",
           "bytes": 12538
         }
       ],

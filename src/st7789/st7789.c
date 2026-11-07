@@ -128,6 +128,15 @@ void xuansi_native_init(uint8_t *base);
 #define PIN_MOSI   42u          /* SDA */
 #define PIN_RES    47u
 #define PIN_DC     21u
+/* The v1 spi engine validates ALL THREE bus pins as 0..47 (xs_spi.c
+ * pins_valid) — the frozen doc's "mosi/miso=-1 = absent" convention is
+ * NOT implemented there (rc=-3 "pin banned/invalid/duplicate"; the
+ * on-board B10-T6 conflict vector hit it). This module therefore passes
+ * a legal UNWIRED MISO: pin 13, the bench.spi loopback default, nothing
+ * connected on this rig. Tx-only transfers (rcap=0) never read it; the
+ * only cost is that pin 13 is claimed by owner=wasm while the driver
+ * is initialized. */
+#define PIN_MISO   13u
 #define SPI_SLOT   0u           /* SPI2 */
 #define SPI_HZ     40000000u    /* brief target; engine cap 80MHz */
 #define DEF_MODE   3u           /* CPOL=1/CPHA=2 — ST7789 4-line sample edge */
@@ -555,10 +564,11 @@ uint64_t st_init(uint32_t ptr, uint32_t len)
     millis(&g_t0);
     g_spi_rc = 7;
     /* CS-less (no_cs=1) is the only abi=1 bus — matches this panel
-     * (no CS pin, dedicated bus). A slot/pin conflict raises the host
-     * exception (class=rt) before rc can be consulted. */
-    spi_config(&g_spi_rc, SPI_SLOT, PIN_SCLK, SPI_HZ, (int32_t)PIN_MOSI, -1,
-               (uint32_t)mode, 1u);
+     * (no CS pin, dedicated bus). MISO is a legal unwired pin (see
+     * PIN_MISO): the v1 engine rejects -1. A slot/pin conflict raises
+     * the host exception (class=rt) before rc can be consulted. */
+    spi_config(&g_spi_rc, SPI_SLOT, PIN_SCLK, SPI_HZ, (int32_t)PIN_MOSI,
+               (int32_t)PIN_MISO, (uint32_t)mode, 1u);
     if (g_spi_rc != 0) return err_result("spi_config refused");  /* defensive */
     st_gate_off = (uint32_t)xo;
     st_mode = (uint32_t)mode;
