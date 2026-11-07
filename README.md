@@ -8,7 +8,9 @@ they drive GPIO/SPI/camera hardware through a small frozen host API.
 
 Current contents: `hello@1.0.0` — the ABI's reference module (full
 host-surface tour: echo/add marshalling, GPIO, timing, stream, SPI
-loopback, camera frame).
+loopback, camera frame) — and `ledwatch@1.0.0` — the ABI's first
+`algorithm` module (camera frame → LED on/off region detection; see
+"ledwatch" below).
 
 ## Module ABI (abi = 1, frozen)
 
@@ -44,6 +46,51 @@ honestly refuses to *execute* them (an upstream AOT-in-PSRAM execution
 defect on ESP32-S3; when it is fixed upstream, the `.aot` track turns
 back on with zero module-side changes). The `.aot` is therefore never
 listed as a deployable file in `index.json`.
+
+## ledwatch (algorithm module)
+
+`ledwatch@1.0.0` turns QVGA RGB565 camera frames into LED on/off
+regions — the analyze() output face is consumed verbatim by the
+bench's display and closed-loop tasks:
+
+```lua
+bench.wasm.call("ledwatch", "analyze", cfg)
+-- cfg (all optional, unknown keys ignored):
+--   threshold      0..255, default 128  (lit = luma >= threshold)
+--   min_area       default 16            (smaller regions dropped)
+--   max_regions    1..32, default 8      (result cap)
+--   discard_first  default true          (consume one frame first —
+--                                         unconverged AWB after camera-on;
+--                                         stateless: true = exactly two
+--                                         camera_frame_get calls per analyze)
+-- returns:
+--   { regions = { {x,y,w,h,area,luma_mean,r_mean,g_mean,b_mean}, ... },
+--     frame   = { w = 320, h = 240 } }
+```
+
+Regions are sorted by area (largest first) and capped at
+`max_regions`. All means are integers 0..255 (the abi=1 value bridge
+carries no floats): RGB565 components replicated into 8 bits, means
+rounded to nearest, luma = BT.601 integer approximation
+`(77R + 150G + 29B) >> 8` (pure red is luma 76 — pass a lower
+threshold when hunting red-only LEDs). The camera must already be on
+at QVGA (caller's responsibility, same contract as hello's
+`cam_frame`); camera-off or larger framesizes surface as the host's
+`rt` exception.
+
+Pipeline: luma → threshold → two-pass connected-component labelling
+(4-connectivity, union-find with path compression, u16 label map in
+linear memory) → per-label area → top-N selection → stats pass
+(bbox + means). The u16 label space is overflow-proof at QVGA: labels
+are only created by lit pixels whose left/up neighbours are dark (a
+4-independent set, at most w·h/2 = 38,400 < 65,535) — the
+checkerboard vector pins the worst case.
+
+ledwatch pins `--initial-memory=720896` (11 pages): its CCL working
+set (~627KB: frame + label map + per-label arrays) plus the wasm
+stack. One ledwatch + one hello co-load fit the board's 1MB WAMR
+pool; two ledwatch instances do not (the loader refuses with an
+honest out-of-memory error).
 
 ## Repository layout
 
@@ -104,11 +151,12 @@ addition; the `kind` field is reserved now.
 | wamrc | **WAMR-2.4.0** (tag `WAMR-2.4.0`, commit `47c7c85a…`) built from source against [espressif/llvm-project](https://github.com/espressif/llvm-project) `xtensa_release_18.1.2` (commit `344b928e…`) — prebuilt wamrc releases lack the xtensa backend |
 
 Build flags are frozen in `build.sh` (`-O2 -fno-jump-tables -nostdlib`,
-`--no-entry --initial-memory=262144 --max-memory=1048576
---global-base=1024`, `--strip-debug --export-dynamic`); exports are
-declared with `export_name` attributes. Rebuilds are deterministic —
-CI re-derives every hash and compares it against `index.json` and each
-`meta.json` on every push.
+`--no-entry --initial-memory=<per module> --max-memory=1048576
+--global-base=1024`, `--strip-debug --export-dynamic`; hello pins the
+ABI-freeze 256KB initial, ledwatch pins 11 pages — see
+`init_mem_for()`); exports are declared with `export_name` attributes.
+Rebuilds are deterministic — CI re-derives every hash and compares it
+against `index.json` and each `meta.json` on every push.
 
 ## Building and testing
 

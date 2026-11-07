@@ -31,10 +31,20 @@ SYSROOT="$WASI_SDK/share/wasi-sysroot"
 # Module build flags (frozen with the ABI):
 #  - ref-types encodings -> the board enables WAMR ref-types
 #  - -fno-jump-tables     -> avoids br_table jump-table encodings
-#  - memory: module-provided (initial 256KB / max 1MB / global-base 1024)
+#  - memory: module-provided (initial per module / max 1MB / global-base 1024)
+#  The ABI freeze's 256KB initial covers hello-scale modules; ledwatch's
+#  CCL working set (QVGA frame + u16 label map + per-label arrays
+#  ~627KB + the wasm-ld 64KB stack) pins 11 pages. Max stays the frozen
+#  1MB ceiling.
+init_mem_for() {  # per-module --initial-memory (64KB wasm pages)
+    case "$1" in
+        ledwatch) echo 720896 ;;   # 11 pages: 626.7KB arrays + 64KB stack + base
+        *)        echo 262144 ;;
+    esac
+}
 CFLAGS="--target=wasm32-wasi --sysroot=$SYSROOT -O2 -fno-jump-tables \
  -nostdlib -Wl,--no-entry -Wl,--allow-undefined \
- -Wl,--initial-memory=262144 -Wl,--max-memory=1048576 \
+ -Wl,--max-memory=1048576 \
  -Wl,--global-base=1024 -Wl,--strip-debug -Wl,--export-dynamic \
  -I src -Wall -Wextra -Wno-unused-parameter"
 
@@ -44,7 +54,8 @@ build_one() {  # build_one <name> <out-dir>
     case "$ver" in *[!a-z0-9.]*|'') echo "bad VERSION for $name: '$ver'" >&2; exit 1;; esac
     mkdir -p "$out/$name/$ver"
     echo "== $name@$ver: wasm =="
-    "$CC" $CFLAGS -o "$out/$name/$ver/$name.wasm" "src/$name/$name.c"
+    "$CC" $CFLAGS -Wl,--initial-memory="$(init_mem_for "$name")" \
+        -o "$out/$name/$ver/$name.wasm" "src/$name/$name.c"
     echo "   $(wc -c < "$out/$name/$ver/$name.wasm") bytes $name.wasm  sha256 $(sha256sum "$out/$name/$ver/$name.wasm" | cut -d' ' -f1)"
     if [ -x "$WAMRC" ]; then
         echo "== $name@$ver: aot (auxiliary) =="
