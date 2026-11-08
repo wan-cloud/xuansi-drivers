@@ -5,10 +5,15 @@ name: toolchain
 # ~55-minute LLVM build. Manual only: re-run when a pin changes (and
 # then bump the tag / asset names).
 #
-# Matrix legs (dispatch input `platforms` filters; jobs.<id>.if cannot
+# Matrix legs (dispatch input `platforms` selects; jobs.<id>.if cannot
 # see the matrix context, so the `legs` job picks the include list and
-# a filtered-out leg does not exist at all — a mac-only re-run never
-# rebuilds/clobbers the published linux asset):
+# an unselected leg does not exist at all — a mac-only re-run never
+# rebuilds/clobbers the published linux asset). The input's default is
+# EMPTY on purpose: an unthinking dispatch must go red ("no platform
+# selected") instead of rebuilding the full matrix — a full rebuild
+# re-uploads (--clobber) the linux asset, stalening every index/daemon
+# pin; it is the deliberate pin-change flow (tag bump) and passes all
+# three keys explicitly:
 #   linux-x64    ubuntu-latest    fork tier + source-build fallback
 #   macos-x64    macos-15-intel   fork tier ONLY
 #   macos-arm64  macos-15         fork tier ONLY (no mac source-build
@@ -26,9 +31,9 @@ on:
   workflow_dispatch:
     inputs:
       platforms:
-        description: "platform keys to build, comma-separated (subset of: linux-x64,macos-x64,macos-arm64)"
+        description: "platform keys to build, comma-separated (subset of: linux-x64,macos-x64,macos-arm64). Defaults to EMPTY = red 'no platform selected': dispatch must name its legs; a deliberate full rebuild (pin change + tag bump) passes all three."
         required: false
-        default: "linux-x64,macos-x64,macos-arm64"
+        default: ""
         type: string
 
 permissions:
@@ -43,7 +48,9 @@ jobs:
       matrix: ${{ steps.pick.outputs.matrix }}
     env:
       ALL_PLATFORMS: linux-x64,macos-x64,macos-arm64
-      WANT: ${{ inputs.platforms || 'linux-x64,macos-x64,macos-arm64' }}
+      # NO fallback on purpose: the empty default must reach the
+      # picker and go red, never silently expand to the full matrix.
+      WANT: ${{ inputs.platforms }}
       # the leg table: linux keeps its legacy manifest.json name; the
       # mac legs consume the mac llvm-dev packages of the same
       # llvm-dev-v1 release (same pinned SHA 344b928e).
@@ -79,7 +86,7 @@ jobs:
                   sys.exit(f"unknown platform {p!r} (known: {known})")
           picked = [l for l in legs if l["platform"] in want]
           if not picked:
-              sys.exit("no platform selected")
+              sys.exit("no platform selected: the platforms input defaults to empty ON PURPOSE (an unthinking full-matrix dispatch would clobber the published linux asset and stale every index pin) - name the legs explicitly, e.g. platforms=macos-x64,macos-arm64; a deliberate full rebuild is the pin-change flow (tag bump) and passes all keys")
           print(json.dumps({"include": picked}, separators=(",", ":")))
           ')"
           echo "picked: $matrix"
