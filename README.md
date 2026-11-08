@@ -149,6 +149,43 @@ bench.wasm.call("st7789", "deinit")
 - st7789 uses the default 256KB initial memory (fb 115KB + stage/out/
   heap + the wasm stack) — hello's budget class.
 
+## gc2145 (sensor-profile module — the first abi=2 kind)
+
+`gc2145@1.0.0` is the B12 camera-migration wave's sensor profile: the
+GC2145 bring-up sequence as **module data + module code** — the whole
+"driver lives in wasm" thesis. The host supplies only the raw abi=2
+natives (i2c×4 + cam×5); every register decision is module-owned:
+
+```lua
+bench.wasm.call("gc2145", "init", {framesize="QVGA"})  -- or "VGA"
+bench.wasm.call("gc2145", "info")                      -- passthrough + state
+bench.wasm.call("gc2145", "off")                       -- cam_stop, idempotent
+```
+
+- **init sequence**: (cam_stop + >=1000ms settle if a stream is on) →
+  `cam_xclk(20MHz)` → 2000ms warmup in 100ms slices →
+  `i2c_config(slot0, SDA=4, SCL=5, 100kHz)` → PID probe
+  (`i2c_writeread {0xF0}`/`{0xF1}` @0x3C; mismatch → `{error, got,
+  want}` carrying the READ pid) → **soft reset first** (`0xFE<-0xE0`,
+  100ms — first-class module knowledge; the vendored esp32-camera
+  driver hides it in its probe path) → the full 582-pair init table
+  (per-register `i2c_write`, wire-faithful; transcribed from
+  espressif/esp32-camera 2.1.8, Apache-2.0, guarded by count+hash in
+  the native test) → 100ms → per-framesize subsample geometry deltas
+  (QVGA 320×240 / VGA 640×480, both 1/2-subsample) → RGB565 format
+  regs → `cam_start(w,h,0)`.
+- **framesize switch** re-runs the whole sequence (soft reset
+  included) after cam_stop + settle; **off** is cam_stop (host
+  idempotent) + module off; **info** is `cam_frame_info` passthrough
+  plus the module's last framesize.
+- Static memory only (instance heap_size=0): table in .rodata, §3.1
+  args-slot reuse; default 256KB initial memory (~4KB used).
+- `fw_compat: {wasm>=0.3.0}` — needs the abi=2 host table (fw 0.3.0);
+  the retired abi=1 camera names are NOT imported.
+- Board exercise is B12-T8 (the bench camera is stalled on a physical
+  issue; the module is native-tested against a fake i2c host +
+  programmable PID + trap channel: 40 checks).
+
 ## jpge (B12-P0 calibration artifact — NOT in index.json)
 
 `jpge@0.1.0` is a **throwaway calibration module** built ahead of the
@@ -235,11 +272,13 @@ is the canonical home for module sources from that point on.
 
 `kind` is `"driver" | "sensor-profile" | "algorithm"`.
 
-**Reserved: `sensor-profile`** (planned 0.3.0) — hot-loadable sensor
-description modules (SCCB register sequences, timing parameters, frame
-buffer geometry, pixel format) so a new DVP sensor becomes a data file
-instead of a firmware rebuild. It is the first planned `abi = 2`
-addition; the `kind` field is reserved now.
+**`sensor-profile`** — landed with `gc2145@1.0.0` (B12-T5, the first
+abi=2 module): hot-loadable sensor description modules (SCCB register
+sequences, timing parameters, frame geometry, pixel format) so a new
+DVP sensor becomes a data file instead of a firmware rebuild. The
+gc2145 entry additionally carries `fw_compat` (the fw floor the
+module's imports need — `{"wasm": ">=0.3.0"}` for the abi=2 host
+table); the daemon's driver-fetch chain reads it (B12-T8).
 
 ## Toolchain (pinned)
 
