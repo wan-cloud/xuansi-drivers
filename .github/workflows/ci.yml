@@ -10,12 +10,17 @@ env:
   WAMR_COMMIT: 47c7c85ac21f240a878026af603e032065d183fb   # tag WAMR-2.4.0
   XTENSA_LLVM_COMMIT: 344b928e67bfc1d07cb150609c55548e86a9bf19  # espressif/llvm-project, branch xtensa_release_18.1.2
   TOOLCHAIN_ROOT: ${{ github.workspace }}/.toolchain
-  # Prebuilt wamrc asset (toolchain-v1 release, built by toolchain.yml from
-  # the same pins). "pending" until the release lands: the asset tier then
-  # skips itself and CI falls back to the source build below.
-  WAMRC_ASSET_URL: https://github.com/wan-cloud/xuansi-drivers/releases/download/toolchain-v1/wamrc-2.4.0-xtensa-18.1.2-linux-x64.tar.gz
-  WAMRC_MANIFEST_URL: https://github.com/wan-cloud/xuansi-drivers/releases/download/toolchain-v1/manifest.json
-  WAMRC_ASSET_SHA256: be6ca10431a03adfe0577c5993addbe6540e9580af2fe56096a3282e0d1a3ac5
+  # Prebuilt wamrc asset (toolchain-v2 release, built by toolchain.yml's
+  # fork tier from the wan-cloud/llvm-project dev package — same pins).
+  # "pending" until the release lands: the asset tier then skips itself
+  # and CI falls back to the source build below.
+  WAMRC_ASSET_URL: https://github.com/wan-cloud/xuansi-drivers/releases/download/toolchain-v2/wamrc-2.4.0-xtensa-18.1.2-linux-x64.tar.gz
+  WAMRC_MANIFEST_URL: https://github.com/wan-cloud/xuansi-drivers/releases/download/toolchain-v2/manifest.json
+  WAMRC_ASSET_SHA256: pending   # filled with the toolchain-v2 asset sha256 once that release lands
+  # chain of custody: the toolchain-v2 wamrc must have been built from
+  # exactly this wan-cloud/llvm-project dev package (manifest cross-check).
+  LLVM_DEV_URL: https://github.com/wan-cloud/llvm-project/releases/download/llvm-dev-v1/llvm-xtensa-dev-344b928e-linux-x64.tar.zst
+  LLVM_DEV_SHA256: 3085f457ac36f842db1b47149e7a93ae5ba2e6437d2075d869f504928189c471
 
 jobs:
   build:
@@ -37,16 +42,17 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.TOOLCHAIN_ROOT }}/wamrc-install
-          key: wamrc-WAMR-2.4.0-xtensa-18.1.2-v2
+          key: wamrc-WAMR-2.4.0-xtensa-18.1.2-v3
 
-      # Asset tier: the toolchain-v1 release carries a wamrc built from
-      # exactly these pins (toolchain.yml). Verified two ways — the
-      # tarball's sha256 against the WAMRC_ASSET_SHA256 literal, and the
-      # release manifest's source SHAs against this workflow's pins —
+      # Asset tier: the toolchain-v2 release carries a wamrc built from
+      # exactly these pins (toolchain.yml, fork tier). Verified two
+      # ways — the tarball's sha256 against the WAMRC_ASSET_SHA256
+      # literal, and the release manifest's source SHAs against this
+      # workflow's pins (including the llvm-fork dev package hash) —
       # then the xtensa backend is asserted before use. Any failure
       # (absent release, hash drift, pin mismatch) falls through to the
       # source build below.
-      - name: wamrc from the toolchain-v1 release asset
+      - name: wamrc from the toolchain-v2 release asset
         id: wamrc-asset
         if: env.WAMRC_ASSET_SHA256 != 'pending' && steps.wamrc-cache.outputs.cache-hit != 'true'
         continue-on-error: true
@@ -63,11 +69,12 @@ jobs:
               "esp_llvm_sha": os.environ["XTENSA_LLVM_COMMIT"],
               "wamr_sha": os.environ["WAMR_COMMIT"],
               "wasi_sdk_tarball_sha256": os.environ["WASI_SDK_SHA256"],
+              "llvm_dev_sha256": os.environ["LLVM_DEV_SHA256"],
           }
           for k, want in pins.items():
               got = m.get(k)
               if got != want:
-                  sys.exit(f"toolchain-v1 manifest {k}={got} != this workflow's pin {want}")
+                  sys.exit(f"toolchain-v2 manifest {k}={got} != this workflow's pin {want}")
           print("manifest pins match")
           EOF
           tar -xzf "$TOOLCHAIN_ROOT/wamrc-asset.tar.gz" -C "$TOOLCHAIN_ROOT/wamrc-install"
@@ -88,6 +95,7 @@ jobs:
         if: steps.wamrc-cache.outputs.cache-hit != 'true' && steps.wamrc-asset.outcome != 'success'
         run: |
           set -eux
+          echo "::warning::wamrc asset tier did not succeed — falling back to the ~1h LLVM source build (B11 review take-away: fallbacks must be loud)"
           sudo apt-get update -qq && sudo apt-get install -y -qq ninja-build ccache
           git init wamr
           git -C wamr remote add origin https://github.com/bytecodealliance/wasm-micro-runtime.git
@@ -164,7 +172,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.TOOLCHAIN_ROOT }}/wamrc-install
-          key: wamrc-WAMR-2.4.0-xtensa-18.1.2-v2
+          key: wamrc-WAMR-2.4.0-xtensa-18.1.2-v3
 
       - name: rebuild from scratch and compare hashes vs index.json / meta.json
         run: |

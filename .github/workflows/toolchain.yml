@@ -1,9 +1,16 @@
 name: toolchain
 
-# Builds the pinned xtensa wamrc from source and publishes it as the
-# `toolchain-v1` release asset, so CI (and anyone else) can skip the
-# ~55-minute LLVM build. Manual only: re-run when a pin changes (and
-# then bump the tag / asset name).
+# Builds the pinned xtensa wamrc and publishes it as the `toolchain-v2`
+# release asset, so CI (and anyone else) can skip the ~55-minute LLVM
+# build. Manual only: re-run when a pin changes (and then bump the tag /
+# asset name).
+#
+# Tier 1 (fork): link wamr-compiler against the wan-cloud/llvm-project
+# dev package — the SAME pinned SHA and configure recipe, built by that
+# repo's build-llvm.yml (the B11 "fork + CI + self-consume" ruling).
+# ~minutes. Tier 2 (fallback): build LLVM from source exactly as
+# tools/build-wamrc.sh phase_llvm (~55 min, cached); engages with a
+# ::warning:: if the fork asset is absent or fails verification.
 on:
   workflow_dispatch:
 
@@ -13,6 +20,11 @@ env:
   WASI_SDK_VERSION: "24.0"
   WASI_SDK_SHA256: c6c38aab56e5de88adf6c1ebc9c3ae8da72f88ec2b656fb024eda8d4167a0bc5
   ASSET_NAME: wamrc-2.4.0-xtensa-18.1.2-linux-x64.tar.gz
+  # wan-cloud/llvm-project dev package (build-llvm.yml, release llvm-dev-v1)
+  LLVM_DEV_URL: https://github.com/wan-cloud/llvm-project/releases/download/llvm-dev-v1/llvm-xtensa-dev-344b928e-linux-x64.tar.zst
+  LLVM_DEV_MANIFEST_URL: https://github.com/wan-cloud/llvm-project/releases/download/llvm-dev-v1/llvm-dev-manifest-344b928e.json
+  LLVM_DEV_SHA256: 3085f457ac36f842db1b47149e7a93ae5ba2e6437d2075d869f504928189c471
+  # fallback-tier cache (the ~50-minute LLVM tree)
   LLVM_CACHE_KEY: toolchain-llvm-344b928e67bfc1d07cb150609c55548e86a9bf19
   LLVM_TREE: .toolchain/wamrc-src/wamr/core/deps/llvm/build
 
@@ -26,32 +38,48 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # The LLVM tree is the ~50-minute part. A re-dispatch (or a run
-      # after a later step failed) restores it instead of repaying.
+      # Tier 1: wamrc against the fork dev package (~minutes). Any
+      # failure (absent release, hash drift, pin mismatch) falls
+      # through to the source-build tier below.
+      - name: wamrc from the wan-cloud LLVM-fork dev package (tier 1)
+        id: wamrc-fork
+        continue-on-error: true
+        run: tools/build-wamrc.sh fork "$PWD/.toolchain/wamrc-install"
+
+      # Tier 2 fallback: the v1 source path.
       - name: restore the LLVM build tree
+        if: steps.wamrc-fork.outcome != 'success'
         id: llvm-cache
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.LLVM_TREE }}
           key: ${{ env.LLVM_CACHE_KEY }}
 
-      - name: build LLVM (only on cache miss)
-        if: steps.llvm-cache.outputs.cache-hit != 'true'
-        run: tools/build-wamrc.sh llvm "$PWD/.toolchain/wamrc-install"
+      - name: build LLVM from source (fallback; only on cache miss)
+        if: steps.wamrc-fork.outcome != 'success' && steps.llvm-cache.outputs.cache-hit != 'true'
+        run: |
+          echo "::warning::toolchain fork tier did not succeed — falling back to the ~55min LLVM source build"
+          tools/build-wamrc.sh llvm "$PWD/.toolchain/wamrc-install"
 
       - name: save the LLVM build tree
-        if: steps.llvm-cache.outputs.cache-hit != 'true'
+        if: steps.wamrc-fork.outcome != 'success' && steps.llvm-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: ${{ env.LLVM_TREE }}
           key: ${{ env.LLVM_CACHE_KEY }}
 
-      - name: build wamrc
-        run: tools/build-wamrc.sh wamrc "$PWD/.toolchain/wamrc-install"
+      - name: build wamrc against the local LLVM tree (fallback)
+        if: steps.wamrc-fork.outcome != 'success'
+        run: |
+          echo "::warning::toolchain: building wamrc via the source-build fallback tier"
+          tools/build-wamrc.sh wamrc "$PWD/.toolchain/wamrc-install"
 
       - name: package asset + manifest
         run: |
           set -eux
+          test -x .toolchain/wamrc-install/wamrc
+          tier=source
+          if [ "${{ steps.wamrc-fork.outcome }}" = "success" ]; then tier=fork; fi
           cd .toolchain/wamrc-install
           tar -czf "../../$ASSET_NAME" wamrc
           cd ../..
@@ -61,10 +89,13 @@ jobs:
           cat > manifest.json <<EOF
           {
             "name": "$ASSET_NAME",
+            "tier": "$tier",
             "wamrc_sha256": "$wamrc_sha",
             "asset_sha256": "$asset_sha",
             "esp_llvm_sha": "$XTENSA_LLVM_COMMIT",
             "wamr_sha": "$WAMR_COMMIT",
+            "llvm_dev_url": "$LLVM_DEV_URL",
+            "llvm_dev_sha256": "$LLVM_DEV_SHA256",
             "wasi_sdk_version": "$WASI_SDK_VERSION",
             "wasi_sdk_tarball_sha256": "$WASI_SDK_SHA256",
             "built": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
@@ -74,13 +105,13 @@ jobs:
           EOF
           cat manifest.json
 
-      - name: attach to the toolchain-v1 release (create if absent)
+      - name: attach to the toolchain-v2 release (create if absent)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -eux
-          gh release view toolchain-v1 --repo "$GITHUB_REPOSITORY" \
-            || gh release create toolchain-v1 --repo "$GITHUB_REPOSITORY" \
-                 --title "toolchain-v1: xtensa wamrc (WAMR-2.4.0 + espressif llvm xtensa_release_18.1.2)" \
-                 --notes "Built by the toolchain workflow from pinned sources: WAMR $WAMR_COMMIT + espressif/llvm-project $XTENSA_LLVM_COMMIT. See manifest.json for hashes. Pairs with wasi-sdk $WASI_SDK_VERSION."
-          gh release upload toolchain-v1 "$ASSET_NAME" manifest.json --clobber --repo "$GITHUB_REPOSITORY"
+          gh release view toolchain-v2 --repo "$GITHUB_REPOSITORY" \
+            || gh release create toolchain-v2 --repo "$GITHUB_REPOSITORY" \
+                 --title "toolchain-v2: xtensa wamrc (WAMR-2.4.0 + wan-cloud llvm-fork dev package)" \
+                 --notes "Built by the toolchain workflow: WAMR $WAMR_COMMIT + the wan-cloud/llvm-project dev package (espressif/llvm-project $XTENSA_LLVM_COMMIT, same configure recipe — see manifest.json; the fork tier fell back to a source build iff manifest tier=source). Pairs with wasi-sdk $WASI_SDK_VERSION."
+          gh release upload toolchain-v2 "$ASSET_NAME" manifest.json --clobber --repo "$GITHUB_REPOSITORY"
