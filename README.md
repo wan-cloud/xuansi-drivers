@@ -212,9 +212,10 @@ The machine-readable pin is [`toolchain-index.json`](toolchain-index.json)
 (structure-checked by `tools/verify_tcindex.py`) — the pinned source the
 daemon's `xuansi_toolchain_fetch` tool fetches, served raw from this
 repository's `main`. The wamrc leg-matrix is still rolling out:
-platforms without a built wamrc carry `null` there (macOS and Windows
-today — wasi-sdk is pinned regardless, and the wamrc entries land as
-those legs are built).
+platforms without a built wamrc carry `null` there (linux-arm64 and
+win-x64 today — wasi-sdk is pinned regardless, and the wamrc entries
+land as those legs are built). win-x64 wamrc: best-effort leg failed
+(MSVC probe); tracked P2.
 
 Build flags are frozen in `build.sh` (`-O2 -fno-jump-tables -nostdlib`,
 `--no-entry --initial-memory=<per module> --max-memory=1048576

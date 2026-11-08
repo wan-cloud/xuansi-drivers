@@ -33,7 +33,11 @@
             "sha256": "4bfc274ae8b68c771dd93e32ad4bd695336ca46b585beb3b1260e5602dbc11a2",
             "bytes": 109975956
           },
-          "wamrc": null
+          "wamrc": {
+            "url": "https://github.com/wan-cloud/xuansi-drivers/releases/download/toolchain-v2/wamrc-2.4.0-xtensa-18.1.2-macos-x64.tar.gz",
+            "sha256": "b87c91e5b6bd907937f8b5f79053212abfc297ee810d2dc348488d8c0089bdc1",
+            "bytes": 23784250
+          }
         },
         "macos-arm64": {
           "wasi_sdk": {
@@ -41,7 +45,11 @@
             "sha256": "aeae999396d5f5caa5ce419f52e83c35869d5fd21d40af80acba2c80f51b0b3a",
             "bytes": 108199177
           },
-          "wamrc": null
+          "wamrc": {
+            "url": "https://github.com/wan-cloud/xuansi-drivers/releases/download/toolchain-v2/wamrc-2.4.0-xtensa-18.1.2-macos-arm64.tar.gz",
+            "sha256": "e73c84a24abbc50e5122a5dc8221aa2c579594ea1559224d156f8bb1778fca30",
+            "bytes": 22421504
+          }
         },
         "win-x64": {
           "wasi_sdk": {
