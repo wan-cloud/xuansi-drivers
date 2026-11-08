@@ -224,6 +224,121 @@ ABI-freeze 256KB initial, ledwatch pins 11 pages — see
 Rebuilds are deterministic — CI re-derives every hash and compares it
 against `index.json` and each `meta.json` on every push.
 
+## User-compiled modules (agent path)
+
+Who needs the toolchain at all — the pin above is only paid by the last
+row:
+
+| you… | toolchain on your host | how modules arrive |
+|---|---|---|
+| only use the board (GPIO/UART/camera, Lua drivers) | none — zero | nothing to install: the npm package never grows, the daemon fetches nothing |
+| use the published prebuilt modules | none — zero | `xuansi_driver_fetch {name}` pulls this repo's `index.json` artifacts (the board never touches the network) |
+| compile your own C modules | wasi-sdk (one `xuansi_toolchain_fetch`) | this section |
+
+The self-compile chain is MCP tools end to end — no shell, no manual SDK
+install (the toolchain face is deliberately zero-CLI; humans ride the
+same tools through their agent):
+
+1. **`xuansi_toolchain_status {}`** — one read-only view: per piece
+   (`wasi_sdk`, `wamrc`) whether the local cache records it AND its
+   files still exist, the installed generation vs the index's latest,
+   and the board-fw pairing matrix. Missing pieces self-guide — the
+   `guidance` field names the next step (`xuansi_toolchain_fetch`).
+   No lease, no daemon call.
+2. **`xuansi_toolchain_fetch {}`** — installs this host's pieces from
+   `toolchain-index.json` (platform auto-selected from the host; there
+   is no platform input). Optional: `generation` (omit = latest),
+   `index_url`, `timeout_sec` (bounds the whole fetch; default 600s,
+   max 3600s — the first wasi-sdk pull is ~120MB on linux, ~495MB on
+   windows). Every archive streams sha256-pinned against the index,
+   lands in a random staging dir, is re-verified, then renames into
+   `~/.cache/xuansi-wasm/` with one atomic `toolchain-state.json`
+   commit — any failure at any step leaves the cache byte-for-byte
+   untouched. Idempotent: a piece whose pinned sha is already on disk
+   is `skipped`, so re-calling is the safe sync verb.
+3. **`xuansi_wasm_build {name:"mymod", source:"…"}`** — compiles the
+   C source ON THIS HOST with the frozen flag block above and lands
+   `drivers/mymod@<version>.wasm` in the daemon-side workspace. The
+   full source rides the tool call (≤ 1 MiB; over is a refusal naming
+   the cap) and `#include "xuansi_host.h"` resolves to the frozen host
+   table embedded in the daemon. Knobs: `version` `[a-z0-9.]+`, omitted
+   = `"0.0.1"` (the first-build convention — the build face has no
+   index whose highest to take, unlike `driver_fetch`; rebuilds version
+   explicitly); `initial_memory` in **bytes**, omitted = the freeze
+   default 262144 (4 × 64 KiB pages — hello's budget class), an
+   explicit value must be a whole multiple of 65536 and at most the
+   frozen 1048576 ceiling (ledwatch-scale working sets pin 11 pages,
+   `720896`); `fw` = an explicit early-refusal pre-check against the
+   0.2.0 wasm-loader floor (omit = no check — bytecode is
+   version-less). The reply carries `file`/`sha256`/`bytes` plus
+   clang's stdout/stderr verbatim as `warnings`; a failed compile
+   refuses with the stderr tail and nothing lands. Storing is NOT
+   activating — the manifest's `Active` only moves on a verified push.
+4. **lease the board, then `xuansi_driver_push {board:"bench1",
+   name:"mymod", version:"0.0.1"}`** — deploys the artifact to the
+   board's `/drv/mymod.wasm` (magic-gated, sha read-back verified).
+   The FIRST push of a name states its version; once a version is
+   active, the bare `{board, name}` re-deploys it (rollback = push the
+   older version explicitly).
+5. exercise it over eval — `xuansi_run_lua {board:"bench1", code:
+   "…"}` riding the same lease:
+
+   ```lua
+   bench.wasm.load("mymod")
+   bench.wasm.call("mymod", "echo", {1, 2, 3})
+   ```
+
+`.aot` today: the toolchain's aot domain is empty in P1 — `.aot` is
+refused for every fw (the current board stack cannot execute it), and
+`wamrc_path` is the explicit experimental developer lane whose build
+still stops at an honest not-yet refusal. When the A1 runtime lands,
+the index's aot domain opens with zero module-side changes.
+
+### Manual fallback (documentation-level)
+
+The fetcher above is the path; these pinned-sha steps are the
+documented fallback for hosts where it cannot run — and the same cache
+feeds this repo's own `build.sh`. Always read the URL and sha256 for
+YOUR platform key (`linux-x64` | `linux-arm64` | `macos-x64` |
+`macos-arm64` | `win-x64`) from
+[`toolchain-index.json`](toolchain-index.json) — never from this
+README:
+
+sh (linux / macOS):
+
+```sh
+IDX=https://raw.githubusercontent.com/wan-cloud/xuansi-drivers/main/toolchain-index.json
+PLAT=linux-x64   # your platform key: linux-x64 | linux-arm64 | macos-x64 | macos-arm64
+URL=$(curl -fsSL "$IDX" | python3 -c "import json,sys; print(json.load(sys.stdin)['generations']['toolchain-v2']['platforms']['$PLAT']['wasi_sdk']['url'])")
+SHA=$(curl -fsSL "$IDX" | python3 -c "import json,sys; print(json.load(sys.stdin)['generations']['toolchain-v2']['platforms']['$PLAT']['wasi_sdk']['sha256'])")
+curl -fL -o sdk.tar.gz "$URL"
+echo "$SHA  sdk.tar.gz" | sha256sum -c -        # must say OK (two spaces; macOS: shasum -a 256 -c -)
+CACHE="${XUANSI_WASM_CACHE:-$HOME/.cache/xuansi-wasm}"
+mkdir -p "$CACHE" && tar -xzf sdk.tar.gz -C "$CACHE"
+```
+
+PowerShell (windows):
+
+```powershell
+$plat = 'win-x64'   # your platform key
+$a = (Invoke-RestMethod https://raw.githubusercontent.com/wan-cloud/xuansi-drivers/main/toolchain-index.json).generations.'toolchain-v2'.platforms.$plat.wasi_sdk
+Invoke-WebRequest $a.url -OutFile sdk.tar.gz
+if ((Get-FileHash sdk.tar.gz -Algorithm SHA256).Hash -notin @($a.sha256, $a.sha256.ToUpper())) { throw 'sha256 mismatch' }
+$cache = if ($env:XUANSI_WASM_CACHE) { $env:XUANSI_WASM_CACHE } else { "$env:USERPROFILE\.cache\xuansi-wasm" }
+New-Item -ItemType Directory -Force $cache | Out-Null
+tar -xzf sdk.tar.gz -C $cache
+```
+
+Consumers of a manual install: this repo's `build.sh` reads
+`WASI_SDK=<extracted tree>`; `xuansi_wasm_build` takes the same tree
+as `wasi_sdk_path` (the §6.4 developer override — it deliberately
+bypasses the cache's pairing evidence, so the manifest records kind
+`wasm-dev` instead of `wasm`: visibly a dev artifact). Honest note: a
+manual install writes no `toolchain-state.json` — only
+`xuansi_toolchain_fetch` commits that pairing evidence — so the
+build's default cache resolution will not auto-discover a hand-unpacked
+tree; the two consumer routes above are the honest ways to use one.
+
 ## Building and testing
 
 ```sh
