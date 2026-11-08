@@ -281,15 +281,13 @@ static int decode_fs(const uint8_t *p, uint32_t len)
             pos++;
         } else if (vt < 0x80 || vt >= 0xe0
                    || vt == 0xcc || vt == 0xcd || vt == 0xce) {
-            int64_t iv;                              /* int: skip */
+            /* int: skip by width */
             uint32_t q = pos;
-            /* minimal int skip (widths only) */
             if (vt < 0x80 || vt >= 0xe0) q++;
             else if (vt == 0xcc) q += 2;
             else if (vt == 0xcd) q += 3;
             else q += 5;
             if (q > len) return 0;
-            (void)iv;
             pos = q;
         } else {
             return 0;                                /* other types: default */
@@ -358,9 +356,12 @@ static uint64_t bring_up(int fs)
     i2c_config(&g_rc, GC2145_SCCB_SLOT, GC2145_SCCB_SDA,
                GC2145_SCCB_SCL, GC2145_SCCB_HZ);
 
-    /* PID probe: hi then lo, atomic register reads */
-    uint32_t pid = ((uint32_t)read_reg(GC2145_CHIP_ID_HIGH) << 8)
-                 | read_reg(GC2145_CHIP_ID_LOW);
+    /* PID probe: hi then lo, atomic register reads — two locals so the
+     * hi-before-lo wire order (what the tests pin) is a language
+     * guarantee, not an accident of expression sequencing */
+    uint32_t pid_hi = read_reg(GC2145_CHIP_ID_HIGH);
+    uint32_t pid_lo = read_reg(GC2145_CHIP_ID_LOW);
+    uint32_t pid = (pid_hi << 8) | pid_lo;
     if (pid != GC2145_PID) {
         char msg[48] = "pid mismatch: got ";
         put_hex16(msg + 18, pid);
