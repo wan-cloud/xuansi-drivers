@@ -16,7 +16,7 @@ env:
   # and CI falls back to the source build below.
   WAMRC_ASSET_URL: https://github.com/wan-cloud/xuansi-drivers/releases/download/toolchain-v2/wamrc-2.4.0-xtensa-18.1.2-linux-x64.tar.gz
   WAMRC_MANIFEST_URL: https://github.com/wan-cloud/xuansi-drivers/releases/download/toolchain-v2/manifest.json
-  WAMRC_ASSET_SHA256: pending   # filled with the toolchain-v2 asset sha256 once that release lands
+  WAMRC_ASSET_SHA256: 209a6a51b6066f05e91060d95c2506ec0bad97cb898fec1fe634cd68865b9c42
   # chain of custody: the toolchain-v2 wamrc must have been built from
   # exactly this wan-cloud/llvm-project dev package (manifest cross-check).
   LLVM_DEV_URL: https://github.com/wan-cloud/llvm-project/releases/download/llvm-dev-v1/llvm-xtensa-dev-344b928e-linux-x64.tar.zst
