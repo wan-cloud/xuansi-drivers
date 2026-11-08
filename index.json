@@ -42,6 +42,23 @@
         }
       ],
       "src_commit": "42b1ea4657830c495ef9f111752d6d542ec6024b"
+    },
+    {
+      "name": "gc2145",
+      "kind": "sensor-profile",
+      "version": "1.0.0",
+      "abi": 2,
+      "files": [
+        {
+          "path": "modules/gc2145/1.0.0/gc2145.wasm",
+          "sha256": "701236ca76f9c97fac65ce75a1717c7cf52bb18812f9ae31377c9ff0cdaf26ff",
+          "bytes": 6898
+        }
+      ],
+      "fw_compat": {
+        "wasm": ">=0.3.0"
+      },
+      "src_commit": "1b688983c251a1a6d755113589505ecaa2dd6523"
     }
   ]
 }
