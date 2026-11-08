@@ -14,7 +14,7 @@
  *
  * The stub camera serves SYNTHETIC RGB565 frames staged by the test
  * (canvas API: clear/rect/circle/checkerboard -> stage_commit), counts
- * camera_frame_get calls, and raises exactly like the real host when
+ * cam_frame_get calls, and raises exactly like the real host when
  * the camera is off — so discard_first's two-frame consumption is
  * asserted against the call counter, and the analyzed content is
  * asserted to come from the SECOND staged frame.
@@ -38,7 +38,7 @@
 /* ---- stub host state ---- */
 
 static int s_camera_on;
-static uint32_t s_frame_calls;               /* camera_frame_get counter */
+static uint32_t s_frame_calls;               /* cam_frame_get counter */
 
 /* staged frames (the stub serves them in order, last one repeats) */
 #define STG_N 8
@@ -61,24 +61,20 @@ static void stub_raise(const char *msg)
 
 /* ---- the `xuansi` namespace stubs (only what ledwatch imports) ---- */
 
-void xuansi_camera_frame_get(uint32_t *out, uint32_t buf_off, uint32_t cap)
+void xuansi_cam_frame_get(uint32_t *len_out, uint32_t buf_off, uint32_t cap,
+                          uint32_t *w_out, uint32_t *h_out)
 {
-    if (!s_camera_on) stub_raise("xuansi.camera_frame_get: camera not on");
+    if (!s_camera_on) stub_raise("xuansi.cam_frame_get: camera not on");
     uint32_t len = 320u * 240u * 2u;
-    if (len > cap) stub_raise("xuansi.camera_frame_get: frame over cap");
-    if (s_staged_n == 0) stub_raise("xuansi.camera_frame_get: stub: no staged frame");
+    if (len > cap) stub_raise("xuansi.cam_frame_get: frame over cap");
+    if (s_staged_n == 0) stub_raise("xuansi.cam_frame_get: stub: no staged frame");
     memcpy(xuansi_lin_base + buf_off,
            s_staged[s_staged_i < s_staged_n ? s_staged_i : s_staged_n - 1], len);
     if (s_staged_i < s_staged_n) s_staged_i++;
     s_frame_calls++;
-    *out = len;
-}
-
-void xuansi_camera_info(uint32_t *out)
-{
-    out[0] = s_camera_on ? 320u : 0u;
-    out[1] = s_camera_on ? 240u : 0u;
-    out[2] = 0u;   /* fs_code 0 = QVGA */
+    *len_out = len;
+    *w_out = 320u;                /* geometry rides the call (abi=2) */
+    *h_out = 240u;
 }
 
 /* ---- synthetic canvas -> staged frame ----
@@ -396,7 +392,7 @@ int main(void)
     reset_state(1);
 
     /* ---- T01 abi + allocator ---- */
-    check(xuansi_abi() == 1, "T01 xuansi_abi()==1", "");
+    check(xuansi_abi() == 2, "T01 xuansi_abi()==2", "");
     check(xuansi_alloc(0) == 0, "T01b alloc(0) refused", "");
 
     /* ---- T02 single rect: exact bbox/area/means, defaults ---- */

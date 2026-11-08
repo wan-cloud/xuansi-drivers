@@ -5,7 +5,7 @@
  *
  * Canonical home: wan-cloud/xuansi-drivers (src/ledwatch/ledwatch.c).
  *
- * Calling face (module_abi=1 marshalling — one msgpack array in, one
+ * Calling face (module ABI marshalling — one msgpack array in, one
  * msgpack result out; see README "Module ABI"):
  *
  *   bench.wasm.call("ledwatch", "analyze", cfg)
@@ -22,7 +22,7 @@
  *                          analyzing (default true — the first frame
  *                          after camera-on carries unconverged AWB).
  *                          Stateless per call: discard_first=true makes
- *                          exactly two camera_frame_get calls.
+ *                          exactly two cam_frame_get calls.
  *
  *   Returns { regions = { {x,y,w,h,area,luma_mean,r_mean,g_mean,b_mean}, ... },
  *             frame   = { w = 320, h = 240 } }
@@ -61,6 +61,10 @@
 #include <stdint.h>
 #include <stddef.h>
 
+/* abi=2: this module imports the cam family (cam_frame_get carries the
+ * geometry out with the frame) — the retired abi=1 camera_frame_get/
+ * camera_info names must NOT appear in the import face. */
+#define XUANSI_ABI 2
 #include "xuansi_host.h"
 
 #ifndef XUANSI_ABI_OVERRIDE
@@ -358,9 +362,10 @@ static uint16_t lw_find(uint16_t x)
 
 /* ---- exported face ---- */
 
-/* camera_info landing spot: linear .bss (abi=1 frozen note — wasm
- * stack slots are on the execution page, out of the host's reach) */
-static uint32_t lw_cam_info[3];
+/* cam_frame_get w/h landing spots: linear .bss (frozen note — wasm
+ * stack slots are on the execution page, out of the host's write
+ * reach) */
+static uint32_t lw_w_out, lw_h_out;
 
 typedef struct {
     uint32_t x0, y0, x1, y1;              /* inclusive bbox */
@@ -374,16 +379,19 @@ uint64_t analyze(uint32_t ptr, uint32_t len)
     lw_cfg_t cfg;
     lw_cfg_decode(XUANSI_IN(ptr), len, &cfg);
 
-    /* geometry (ro probe; the frame_get below raises honestly when the
-     * camera is off or the framesize exceeds this module's QVGA cap) */
-    camera_info(lw_cam_info);
-    uint32_t w = lw_cam_info[0], h = lw_cam_info[1];
-
-    /* AWB first-frame discard (stateless per call) */
+    /* one frame (or two with the AWB discard — stateless per call);
+     * geometry rides the call (abi=2 — no separate info probe; the
+     * same call raises honestly when the camera is off or the
+     * framesize exceeds this module's QVGA cap) */
     uint32_t flen = 0;
-    camera_frame_get(&flen, XUANSI_OFF(frame_buf), FRAME_CAP);
+    lw_w_out = 0;
+    lw_h_out = 0;
+    cam_frame_get(&flen, XUANSI_OFF(frame_buf), FRAME_CAP, &lw_w_out,
+                  &lw_h_out);
     if (cfg.discard_first)
-        camera_frame_get(&flen, XUANSI_OFF(frame_buf), FRAME_CAP);
+        cam_frame_get(&flen, XUANSI_OFF(frame_buf), FRAME_CAP, &lw_w_out,
+                      &lw_h_out);
+    uint32_t w = lw_w_out, h = lw_h_out;
 
     uint32_t pos = 0;
     uint32_t npx = w * h;
