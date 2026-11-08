@@ -33,7 +33,7 @@ set -euo pipefail
 WAMR_COMMIT="${WAMR_COMMIT:-47c7c85ac21f240a878026af603e032065d183fb}"     # tag WAMR-2.4.0
 XTENSA_LLVM_COMMIT="${XTENSA_LLVM_COMMIT:-344b928e67bfc1d07cb150609c55548e86a9bf19}"  # espressif xtensa_release_18.1.2
 LLVM_DEV_URL="${LLVM_DEV_URL:-https://github.com/wan-cloud/llvm-project/releases/download/llvm-dev-v1/llvm-xtensa-dev-344b928e-linux-x64.tar.zst}"
-LLVM_DEV_SHA256="${LLVM_DEV_SHA256:-3085f457ac36f842db1b47149e7a93ae5ba2e6437d2075d869f504928189c471}"
+LLVM_DEV_SHA256="${LLVM_DEV_SHA256:-20d0d6142a76e7c46645d85f507e020d2c3aa0af8dc60ba29cd127870e1944bb}"
 LLVM_DEV_MANIFEST_URL="${LLVM_DEV_MANIFEST_URL:-https://github.com/wan-cloud/llvm-project/releases/download/llvm-dev-v1/llvm-dev-manifest-344b928e.json}"
 
 cmd="${1:-all}"; install_dir="${2:?usage: build-wamrc.sh [llvm|wamrc|all] <install-dir>}"

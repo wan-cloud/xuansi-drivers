@@ -23,7 +23,7 @@ env:
   # wan-cloud/llvm-project dev package (build-llvm.yml, release llvm-dev-v1)
   LLVM_DEV_URL: https://github.com/wan-cloud/llvm-project/releases/download/llvm-dev-v1/llvm-xtensa-dev-344b928e-linux-x64.tar.zst
   LLVM_DEV_MANIFEST_URL: https://github.com/wan-cloud/llvm-project/releases/download/llvm-dev-v1/llvm-dev-manifest-344b928e.json
-  LLVM_DEV_SHA256: 3085f457ac36f842db1b47149e7a93ae5ba2e6437d2075d869f504928189c471
+  LLVM_DEV_SHA256: 20d0d6142a76e7c46645d85f507e020d2c3aa0af8dc60ba29cd127870e1944bb
   # fallback-tier cache (the ~50-minute LLVM tree)
   LLVM_CACHE_KEY: toolchain-llvm-344b928e67bfc1d07cb150609c55548e86a9bf19
   LLVM_TREE: .toolchain/wamrc-src/wamr/core/deps/llvm/build
