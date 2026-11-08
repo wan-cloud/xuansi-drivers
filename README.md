@@ -152,6 +152,8 @@ bench.wasm.call("st7789", "deinit")
 ```
 index.json                  # the module index (schema below; single
                             # source for "what is published")
+toolchain-index.json        # the pinned-toolchain index (see
+                            # "Toolchain"); served raw to the daemon
 modules/<name>/<ver>/       # built artifacts, committed:
                             #   <name>.wasm           deliverable (in index files[])
                             #   <name>.aot            auxiliary (hash in meta only)
@@ -162,6 +164,7 @@ src/<name>/test_<name>.c    # native unit test + stub host
 src/<name>/VERSION          # e.g. "1.0.0"
 build.sh                    # wasi-sdk + wamrc build (all modules or by name)
 tools/verify_index.py       # rebuild-vs-index hash comparison
+tools/verify_tcindex.py     # toolchain-index.json structure check
 .github/workflows/ci.yml    # CI: build / verify / native tests
 ```
 
@@ -204,6 +207,14 @@ addition; the `kind` field is reserved now.
 |---|---|
 | wasi-sdk | **24.0** (LLVM 18.1.2) — [release tarball](https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-24/wasi-sdk-24.0-x86_64-linux.tar.gz), sha256 `c6c38aab56e5de88adf6c1ebc9c3ae8da72f88ec2b656fb024eda8d4167a0bc5` |
 | wamrc | **WAMR-2.4.0** (tag `WAMR-2.4.0`, commit `47c7c85a…`) built from source against [espressif/llvm-project](https://github.com/espressif/llvm-project) `xtensa_release_18.1.2` (commit `344b928e…`) — prebuilt wamrc releases lack the xtensa backend |
+
+The machine-readable pin is [`toolchain-index.json`](toolchain-index.json)
+(structure-checked by `tools/verify_tcindex.py`) — the pinned source the
+daemon's `xuansi_toolchain_fetch` tool fetches, served raw from this
+repository's `main`. The wamrc leg-matrix is still rolling out:
+platforms without a built wamrc carry `null` there (macOS and Windows
+today — wasi-sdk is pinned regardless, and the wamrc entries land as
+those legs are built).
 
 Build flags are frozen in `build.sh` (`-O2 -fno-jump-tables -nostdlib`,
 `--no-entry --initial-memory=<per module> --max-memory=1048576
