@@ -1,0 +1,75 @@
+{
+  "name": "jpge",
+  "kind": "codec",
+  "version": "1.0.0",
+  "abi": 2,
+  "src_commit": "0bae9a42c919bce2a88b0ca9d0bb7af60ef0658f",
+  "src": "src/jpge/jpge.c (+ src/jpge/jpge.cpp — vendored encoder core)",
+  "imports": [
+    "xuansi.millis",
+    "xuansi.cam_frame_get",
+    "xuansi.stream_send"
+  ],
+  "entries": [
+    {
+      "fn": "xuansi_abi",
+      "signature": "() -> u32",
+      "desc": "abi version gate; returns 2 — the module imports the abi=2 cam family only (cam_frame_get carries w/h out with the frame; zero retired camera_* names in the import table)"
+    },
+    {
+      "fn": "xuansi_alloc",
+      "signature": "(u32 n) -> u32",
+      "desc": "linear-memory offset for the host-written msgpack args; 0 = refusal; <=128B calls reuse one fixed slot (§3.1)"
+    },
+    {
+      "fn": "grab",
+      "signature": "[cfg?] -> {off, len, w, h} | {error}",
+      "desc": "one cam_frame_get into the module frame buffer; geometry rides the call (no separate info call). off = linear offset of the RGB565 frame (hi byte first — the GC2145 DVP wire order). Defensive {error='bad frame geometry'} only; real host refusals (camera off, frame over cap) raise rt."
+    },
+    {
+      "fn": "encode",
+      "signature": "[{quality=i:1..100}?] -> {off, len} | {error}",
+      "desc": "re-encode the LAST grabbed frame through the vendored encoder (per-scanline RGB565->RGB888, H2V2, quality default 80 clamped 1..100 — the frame2jpg semantics). {error='no frame (grab first)'} before any grab; {error='encode failed (output overflow?)'} beyond the 128KB output buffer."
+    },
+    {
+      "fn": "shot",
+      "signature": "[{quality=i:1..100}?] -> {len, w, h, enc_ms} + one ch=2 JPEG frame | {error,...}",
+      "desc": "the full pipeline: cam_frame_get -> jpge encode (enc_ms spans the encode ONLY — the honest interp cost, sensor read excluded) -> SOI/EOI gate (FFD8/FFD9 first/last) -> stream_send (ch=2, host stamps 'jpge'). The host chunks payloads at 65,526-5B name stamp = 65,521B — VGA JPEGs are multi-chunk shapes. HONEST interp risk (measured): VGA q80 ~15s+, QVGA q60 ~3.9s vs the 5s VM-task TWDT single-call bar — VGA shots WILL trip the watchdog on the interpreter; QVGA q<=60 is the measured interp-safe class. Single call by design; the AOT track is the resolution, NOT slice APIs. Truncation (TX full/OOM mid-chunk) answers {error='stream_send truncated', len, sent, w, h, enc_ms} — sent is a whole-chunk multiple prefix."
+    },
+    {
+      "fn": "stream_raw",
+      "signature": "[] -> {len, w, h} + one ch=2 raw RGB565 frame | {error,...}",
+      "desc": "the generic CV egress: one cam_frame_get + one stream_send of the RAW RGB565 frame (len = w*h*2; no encode, no JPEG). VGA raw = 614,400B = 10 host chunks; truncation answers {error='stream_send truncated', len, sent, w, h} (no enc_ms — nothing was encoded). Natively tested against a chunk-emulating sink (wire byte-equality + chunk counts + mid-chunk TX-full)."
+    }
+  ],
+  "linear_memory": {
+    "initial_bytes": 917504,
+    "max_bytes": 1048576,
+    "note": "14 pages: VGA frame 614.4KB + JPEG out 128KB + encoder MCU pool 30.7KB + scanline 1.9KB + heap/args/out + wasm-ld 64KB stack. Static allocation only — WAMR builtin malloc unavailable (heap_size=0); the encoder's single allocation (MCU line pool) is a fixed arena, high-water 15,360B QVGA / 30,720B VGA, asserted natively (T09)."
+  },
+  "hardware": {
+    "consumes": "the bench camera stream (GC2145 DVP epoch; RGB565 hi-byte-first, QVGA 320x240 / VGA 640x480); bring-up is gc2145@1.0.0's job — this module claims no hardware of its own",
+    "egress": "stream ch=2 frames host-stamped 'jpge' (JPEG for shot, raw RGB565 for stream_raw)",
+    "encoder_provenance": "vendored from espressif/esp32-camera 2.1.8 jpge (Apache-2.0; public upstream) — byte-identical conversion/subsampling/quality semantics to the board's former native frame2jpg path"
+  },
+  "deliverable": {
+    "path": "modules/jpge/1.0.0/jpge.wasm",
+    "sha256": "c0d6a97c31c516c03a1af795c6376dfb52de5a77474990f4d9b791408916472c",
+    "bytes": 28411
+  },
+  "auxiliary": [
+    {
+      "path": "modules/jpge/1.0.0/jpge.aot",
+      "sha256": "1fe13f8fceea45886afdb7f53d0aef2090fac0a807a031ce265790fb17e4ea48",
+      "bytes": 90936,
+      "note": "wamrc xtensa/esp32s3 output, hash-recorded for provenance. NOT deployable on the current board stack (loader honestly refuses .aot execution — upstream ESP32-S3 AOT-in-PSRAM defect). Future-ready (the documented interp TWDT resolution); never listed in index.json files[]."
+    }
+  ],
+  "fw_compat": {
+    "wasm": ">=0.3.0"
+  },
+  "toolchain": {
+    "wasi-sdk": "24.0 (LLVM 18.1.2)",
+    "wamrc": "WAMR-2.4.0 built against espressif/llvm-project xtensa_release_18.1.2"
+  }
+}

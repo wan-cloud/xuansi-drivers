@@ -59,6 +59,23 @@
         "wasm": ">=0.3.0"
       },
       "src_commit": "1b688983c251a1a6d755113589505ecaa2dd6523"
+    },
+    {
+      "name": "jpge",
+      "kind": "codec",
+      "version": "1.0.0",
+      "abi": 2,
+      "files": [
+        {
+          "path": "modules/jpge/1.0.0/jpge.wasm",
+          "sha256": "c0d6a97c31c516c03a1af795c6376dfb52de5a77474990f4d9b791408916472c",
+          "bytes": 28411
+        }
+      ],
+      "fw_compat": {
+        "wasm": ">=0.3.0"
+      },
+      "src_commit": "0bae9a42c919bce2a88b0ca9d0bb7af60ef0658f"
     }
   ]
 }

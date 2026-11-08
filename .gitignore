@@ -4,7 +4,7 @@
 *.o
 *.tmp
 
-# B12-P0 calibration artifact: jpge builds locally (build.sh) but is a
-# throwaway calibration module — deliberately NOT committed, NOT in
-# index.json (the formal abi=2 camera module is a later task).
-/modules/jpge/
+# B12-P0 calibration artifact 0.1.0: local-only throwaway (never
+# indexed, never committed). The formal jpge@1.0.0 (abi=2, kind=codec)
+# IS committed under modules/jpge/1.0.0/ like every indexed module.
+/modules/jpge/0.1.0/
