@@ -144,9 +144,13 @@ phase_fork() {
     echo "== wamrc already present =="
   else
     echo "== wamr-compiler (against the fork dev package) =="
+    # WAMR_BUILD_WITH_CUSTOM_LLVM=1: skip wamr-compiler's hardcoded
+    # ../core/deps/llvm/build check and use the -DLLVM_DIR we pass
+    # (the official external-LLVM path in WAMR's CMakeLists).
     cmake -G Ninja -S "$scratch/wamr/wamr-compiler" -B "$scratch/wamr/wamr-compiler/build-fork" \
       -DCMAKE_BUILD_TYPE= \
       -DCMAKE_CXX_FLAGS="-include cstdint" \
+      -DWAMR_BUILD_WITH_CUSTOM_LLVM=1 \
       -DLLVM_DIR="$pkg/lib/cmake/llvm"
     ninja -C "$scratch/wamr/wamr-compiler/build-fork"
     cp "$scratch/wamr/wamr-compiler/build-fork/wamrc" "$install_dir/wamrc"
