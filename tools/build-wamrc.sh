@@ -63,6 +63,21 @@ fetch_sources() {
   fetch_llvm
 }
 
+# sha256_check <expected> <file> — portable checksum verify: GNU
+# sha256sum on linux, perl shasum on macOS (the fork tier runs on
+# both; everything else in the fork path is already portable —
+# curl/python3/git/tar --zstd ship on both runner images, bsdtar
+# understands --zstd just like GNU tar). Same "sha  path" check-line
+# format on both.
+sha256_check() {
+  local want="$1" file="$2"
+  if command -v sha256sum >/dev/null 2>&1; then
+    echo "$want  $file" | sha256sum -c -
+  else
+    echo "$want  $file" | shasum -a 256 -c -
+  fi
+}
+
 # fetch_fork_pkg <pkg-dir> — download + verify the wan-cloud LLVM-fork
 # dev package. Two-way pin check like the CI asset tier: the tarball's
 # sha256 against LLVM_DEV_SHA256, and the manifest's source/asset
@@ -76,7 +91,7 @@ fetch_fork_pkg() {
   echo "== fork LLVM dev package: $LLVM_DEV_URL =="
   mkdir -p "$pkg"
   curl -fsSL "$LLVM_DEV_URL" -o "$pkg.tar.zst"
-  echo "$LLVM_DEV_SHA256  $pkg.tar.zst" | sha256sum -c -
+  sha256_check "$LLVM_DEV_SHA256" "$pkg.tar.zst"
   curl -fsSL "$LLVM_DEV_MANIFEST_URL" -o "$pkg.manifest.json"
   python3 - "$pkg.manifest.json" "$XTENSA_LLVM_COMMIT" "$LLVM_DEV_SHA256" <<'EOF'
 import json, sys

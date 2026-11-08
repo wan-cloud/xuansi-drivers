@@ -1,54 +1,127 @@
 name: toolchain
 
-# Builds the pinned xtensa wamrc and publishes it as the `toolchain-v2`
-# release asset, so CI (and anyone else) can skip the ~55-minute LLVM
-# build. Manual only: re-run when a pin changes (and then bump the tag /
-# asset name).
+# Builds the pinned xtensa wamrc per platform and publishes each as a
+# `toolchain-v2` release asset, so CI (and anyone else) can skip the
+# ~55-minute LLVM build. Manual only: re-run when a pin changes (and
+# then bump the tag / asset names).
+#
+# Matrix legs (dispatch input `platforms` filters; jobs.<id>.if cannot
+# see the matrix context, so the `legs` job picks the include list and
+# a filtered-out leg does not exist at all — a mac-only re-run never
+# rebuilds/clobbers the published linux asset):
+#   linux-x64    ubuntu-latest    fork tier + source-build fallback
+#   macos-x64    macos-15-intel   fork tier ONLY
+#   macos-arm64  macos-15         fork tier ONLY (no mac source-build
+#                                 precedent, no cache — a missing or
+#                                 failing fork asset fails the leg red,
+#                                 honestly)
 #
 # Tier 1 (fork): link wamr-compiler against the wan-cloud/llvm-project
 # dev package — the SAME pinned SHA and configure recipe, built by that
 # repo's build-llvm.yml (the B11 "fork + CI + self-consume" ruling).
-# ~minutes. Tier 2 (fallback): build LLVM from source exactly as
-# tools/build-wamrc.sh phase_llvm (~55 min, cached); engages with a
-# ::warning:: if the fork asset is absent or fails verification.
+# ~minutes. Tier 2 (fallback, linux leg only): build LLVM from source
+# exactly as tools/build-wamrc.sh phase_llvm (~55 min, cached); engages
+# with a ::warning:: if the fork asset is absent or fails verification.
 on:
   workflow_dispatch:
-
-env:
-  WAMR_COMMIT: 47c7c85ac21f240a878026af603e032065d183fb          # tag WAMR-2.4.0
-  XTENSA_LLVM_COMMIT: 344b928e67bfc1d07cb150609c55548e86a9bf19   # espressif/llvm-project xtensa_release_18.1.2
-  WASI_SDK_VERSION: "24.0"
-  WASI_SDK_SHA256: c6c38aab56e5de88adf6c1ebc9c3ae8da72f88ec2b656fb024eda8d4167a0bc5
-  ASSET_NAME: wamrc-2.4.0-xtensa-18.1.2-linux-x64.tar.gz
-  # wan-cloud/llvm-project dev package (build-llvm.yml, release llvm-dev-v1)
-  LLVM_DEV_URL: https://github.com/wan-cloud/llvm-project/releases/download/llvm-dev-v1/llvm-xtensa-dev-344b928e-linux-x64.tar.zst
-  LLVM_DEV_MANIFEST_URL: https://github.com/wan-cloud/llvm-project/releases/download/llvm-dev-v1/llvm-dev-manifest-344b928e.json
-  LLVM_DEV_SHA256: 20d0d6142a76e7c46645d85f507e020d2c3aa0af8dc60ba29cd127870e1944bb
-  # fallback-tier cache (the ~50-minute LLVM tree)
-  LLVM_CACHE_KEY: toolchain-llvm-344b928e67bfc1d07cb150609c55548e86a9bf19
-  LLVM_TREE: .toolchain/wamrc-src/wamr/core/deps/llvm/build
+    inputs:
+      platforms:
+        description: "platform keys to build, comma-separated (subset of: linux-x64,macos-x64,macos-arm64)"
+        required: false
+        default: "linux-x64,macos-x64,macos-arm64"
+        type: string
 
 permissions:
   contents: write   # release create/upload
 
 jobs:
-  release:
+  # picks the matrix legs from the `platforms` input; emits the whole
+  # include-style matrix (the leg table lives HERE, once).
+  legs:
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.pick.outputs.matrix }}
+    env:
+      ALL_PLATFORMS: linux-x64,macos-x64,macos-arm64
+      WANT: ${{ inputs.platforms || 'linux-x64,macos-x64,macos-arm64' }}
+      # the leg table: linux keeps its legacy manifest.json name; the
+      # mac legs consume the mac llvm-dev packages of the same
+      # llvm-dev-v1 release (same pinned SHA 344b928e).
+      LEGS_JSON: |
+        {"include": [
+          {"platform": "linux-x64", "runner": "ubuntu-latest", "fallback-tier": "true",
+           "asset": "wamrc-2.4.0-xtensa-18.1.2-linux-x64.tar.gz", "manifest-name": "manifest.json",
+           "llvm-dev-url": "https://github.com/wan-cloud/llvm-project/releases/download/llvm-dev-v1/llvm-xtensa-dev-344b928e-linux-x64.tar.zst",
+           "llvm-dev-sha256": "20d0d6142a76e7c46645d85f507e020d2c3aa0af8dc60ba29cd127870e1944bb",
+           "llvm-dev-manifest-url": "https://github.com/wan-cloud/llvm-project/releases/download/llvm-dev-v1/llvm-dev-manifest-344b928e.json"},
+          {"platform": "macos-x64", "runner": "macos-15-intel", "fallback-tier": "false",
+           "asset": "wamrc-2.4.0-xtensa-18.1.2-macos-x64.tar.gz", "manifest-name": "manifest-macos-x64.json",
+           "llvm-dev-url": "https://github.com/wan-cloud/llvm-project/releases/download/llvm-dev-v1/llvm-xtensa-dev-344b928e-macos-x64.tar.zst",
+           "llvm-dev-sha256": "13feb114d9a0f3ba7b50e966c27e1d35028e20eb8c22bfd354e470d627e40632",
+           "llvm-dev-manifest-url": "https://github.com/wan-cloud/llvm-project/releases/download/llvm-dev-v1/llvm-dev-manifest-344b928e-macos-x64.json"},
+          {"platform": "macos-arm64", "runner": "macos-15", "fallback-tier": "false",
+           "asset": "wamrc-2.4.0-xtensa-18.1.2-macos-arm64.tar.gz", "manifest-name": "manifest-macos-arm64.json",
+           "llvm-dev-url": "https://github.com/wan-cloud/llvm-project/releases/download/llvm-dev-v1/llvm-xtensa-dev-344b928e-macos-arm64.tar.zst",
+           "llvm-dev-sha256": "9c41be434b88db476db584d62ac4fd3dc9b7c1c96404ec50c4d5d4542fd511f4",
+           "llvm-dev-manifest-url": "https://github.com/wan-cloud/llvm-project/releases/download/llvm-dev-v1/llvm-dev-manifest-344b928e-macos-arm64.json"}
+        ]}
+    steps:
+      - id: pick
+        run: |
+          set -eux
+          matrix="$(python3 -c '
+          import json, os, sys
+          legs = json.loads(os.environ["LEGS_JSON"])["include"]
+          want = [p.strip() for p in os.environ.get("WANT", "").split(",") if p.strip()]
+          known = os.environ["ALL_PLATFORMS"].split(",")
+          for p in want:
+              if p not in known:
+                  sys.exit(f"unknown platform {p!r} (known: {known})")
+          picked = [l for l in legs if l["platform"] in want]
+          if not picked:
+              sys.exit("no platform selected")
+          print(json.dumps({"include": picked}, separators=(",", ":")))
+          ')"
+          echo "picked: $matrix"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: [legs]
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.legs.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 150
+    env:
+      WAMR_COMMIT: 47c7c85ac21f240a878026af603e032065d183fb          # tag WAMR-2.4.0
+      XTENSA_LLVM_COMMIT: 344b928e67bfc1d07cb150609c55548e86a9bf19   # espressif/llvm-project xtensa_release_18.1.2
+      WASI_SDK_VERSION: "24.0"
+      WASI_SDK_SHA256: c6c38aab56e5de88adf6c1ebc9c3ae8da72f88ec2b656fb024eda8d4167a0bc5
+      ASSET_NAME: ${{ matrix.asset }}
+      MANIFEST_NAME: ${{ matrix.manifest-name }}
+      # wan-cloud/llvm-project dev package for THIS leg (build-llvm.yml, release llvm-dev-v1)
+      LLVM_DEV_URL: ${{ matrix.llvm-dev-url }}
+      LLVM_DEV_MANIFEST_URL: ${{ matrix.llvm-dev-manifest-url }}
+      LLVM_DEV_SHA256: ${{ matrix.llvm-dev-sha256 }}
+      # fallback-tier cache (the ~50-minute LLVM tree; linux leg only)
+      LLVM_CACHE_KEY: toolchain-llvm-344b928e67bfc1d07cb150609c55548e86a9bf19
+      LLVM_TREE: .toolchain/wamrc-src/wamr/core/deps/llvm/build
+
     steps:
       - uses: actions/checkout@v4
 
-      # Tier 1: wamrc against the fork dev package (~minutes). Any
-      # failure (absent release, hash drift, pin mismatch) falls
-      # through to the source-build tier below.
+      # Tier 1: wamrc against the fork dev package (~minutes). On the
+      # linux leg any failure (absent release, hash drift, pin
+      # mismatch) falls through to the source-build tier below; on the
+      # mac legs (no fallback) it fails the leg honestly.
       - name: wamrc from the wan-cloud LLVM-fork dev package (tier 1)
         id: wamrc-fork
-        continue-on-error: true
+        continue-on-error: ${{ matrix.fallback-tier == 'true' }}
         run: tools/build-wamrc.sh fork "$PWD/.toolchain/wamrc-install"
 
-      # Tier 2 fallback: the v1 source path.
+      # Tier 2 fallback: the v1 source path (linux leg only).
       - name: restore the LLVM build tree
-        if: steps.wamrc-fork.outcome != 'success'
+        if: matrix.fallback-tier == 'true' && steps.wamrc-fork.outcome != 'success'
         id: llvm-cache
         uses: actions/cache/restore@v4
         with:
@@ -56,20 +129,20 @@ jobs:
           key: ${{ env.LLVM_CACHE_KEY }}
 
       - name: build LLVM from source (fallback; only on cache miss)
-        if: steps.wamrc-fork.outcome != 'success' && steps.llvm-cache.outputs.cache-hit != 'true'
+        if: matrix.fallback-tier == 'true' && steps.wamrc-fork.outcome != 'success' && steps.llvm-cache.outputs.cache-hit != 'true'
         run: |
           echo "::warning::toolchain fork tier did not succeed — falling back to the ~55min LLVM source build"
           tools/build-wamrc.sh llvm "$PWD/.toolchain/wamrc-install"
 
       - name: save the LLVM build tree
-        if: steps.wamrc-fork.outcome != 'success' && steps.llvm-cache.outputs.cache-hit != 'true'
+        if: matrix.fallback-tier == 'true' && steps.wamrc-fork.outcome != 'success' && steps.llvm-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: ${{ env.LLVM_TREE }}
           key: ${{ env.LLVM_CACHE_KEY }}
 
       - name: build wamrc against the local LLVM tree (fallback)
-        if: steps.wamrc-fork.outcome != 'success'
+        if: matrix.fallback-tier == 'true' && steps.wamrc-fork.outcome != 'success'
         run: |
           echo "::warning::toolchain: building wamrc via the source-build fallback tier"
           tools/build-wamrc.sh wamrc "$PWD/.toolchain/wamrc-install"
@@ -83,11 +156,22 @@ jobs:
           cd .toolchain/wamrc-install
           tar -czf "../../$ASSET_NAME" wamrc
           cd ../..
-          wamrc_sha=$(sha256sum .toolchain/wamrc-install/wamrc | cut -d' ' -f1)
-          asset_sha=$(sha256sum "$ASSET_NAME" | cut -d' ' -f1)
-          runner_image=$(. /etc/os-release && echo "$PRETTY_NAME")
-          cat > manifest.json <<EOF
+          file_sha() {
+            if command -v sha256sum >/dev/null 2>&1; then
+              sha256sum "$1" | cut -d' ' -f1
+            else
+              shasum -a 256 "$1" | cut -d' ' -f1   # macOS runners
+            fi
+          }
+          wamrc_sha=$(file_sha .toolchain/wamrc-install/wamrc)
+          asset_sha=$(file_sha "$ASSET_NAME")
+          case "$RUNNER_OS" in
+            macOS) runner_image="$(sw_vers -productName) $(sw_vers -productVersion) ($(uname -m))" ;;
+            *)     runner_image=$(. /etc/os-release && echo "$PRETTY_NAME") ;;
+          esac
+          cat > "$MANIFEST_NAME" <<EOF
           {
+            "platform": "${{ matrix.platform }}",
             "name": "$ASSET_NAME",
             "tier": "$tier",
             "wamrc_sha256": "$wamrc_sha",
@@ -103,7 +187,7 @@ jobs:
             "runner_image": "$runner_image"
           }
           EOF
-          cat manifest.json
+          cat "$MANIFEST_NAME"
 
       - name: attach to the toolchain-v2 release (create if absent)
         env:
@@ -113,5 +197,6 @@ jobs:
           gh release view toolchain-v2 --repo "$GITHUB_REPOSITORY" \
             || gh release create toolchain-v2 --repo "$GITHUB_REPOSITORY" \
                  --title "toolchain-v2: xtensa wamrc (WAMR-2.4.0 + wan-cloud llvm-fork dev package)" \
-                 --notes "Built by the toolchain workflow: WAMR $WAMR_COMMIT + the wan-cloud/llvm-project dev package (espressif/llvm-project $XTENSA_LLVM_COMMIT, same configure recipe — see manifest.json; the fork tier fell back to a source build iff manifest tier=source). Pairs with wasi-sdk $WASI_SDK_VERSION."
-          gh release upload toolchain-v2 "$ASSET_NAME" manifest.json --clobber --repo "$GITHUB_REPOSITORY"
+                 --notes "Built by the toolchain workflow: WAMR $WAMR_COMMIT + the wan-cloud/llvm-project dev package (espressif/llvm-project $XTENSA_LLVM_COMMIT, same configure recipe — see the per-platform manifest; the fork tier fell back to a source build iff manifest tier=source). Pairs with wasi-sdk $WASI_SDK_VERSION. This upload: $ASSET_NAME." \
+            || true   # matrix legs race the create; the loser's create error is fine
+          gh release upload toolchain-v2 "$ASSET_NAME" "$MANIFEST_NAME" --clobber --repo "$GITHUB_REPOSITORY"
