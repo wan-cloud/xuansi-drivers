@@ -39,6 +39,10 @@ SYSROOT="$WASI_SDK/share/wasi-sysroot"
 init_mem_for() {  # per-module --initial-memory (64KB wasm pages)
     case "$1" in
         ledwatch) echo 720896 ;;   # 11 pages: 626.7KB arrays + 64KB stack + base
+        jpge)     echo 917504 ;;   # 14 pages: VGA frame 614.4K + jpg out 128K
+                                  # + mcu pool 30.7K + line 1.9K + heap/stack
+                                  # (B12-P0 calibration module; VGA-capable
+                                  # static layout, see src/jpge/jpge.c)
         *)        echo 262144 ;;
     esac
 }
@@ -48,14 +52,36 @@ CFLAGS="--target=wasm32-wasi --sysroot=$SYSROOT -O2 -fno-jump-tables \
  -Wl,--global-base=1024 -Wl,--strip-debug -Wl,--export-dynamic \
  -I src -Wall -Wextra -Wno-unused-parameter"
 
+# C++ module flags: the ONE sanctioned deviation from the frozen C flag
+# set (B12-P0 jpge — vendored C++ encoder core; the module uses no C++
+# runtime facility: no RTTI, no exceptions, no new/delete at runtime, no
+# global ctors — only classes/vtables, which are pure codegen, plus the
+# minimal operator new/delete shims the deleting-dtor symbol references
+# want at LINK time). -fvisibility=hidden keeps those shims and every
+# other C++-TU symbol out of the wasm export face (the module face comes
+# from the C TU's export_name attributes). Everything else mirrors
+# CFLAGS verbatim.
+CXXFLAGS_EXTRA="-fno-rtti -fno-exceptions -fvisibility=hidden"
+
 build_one() {  # build_one <name> <out-dir>
     name="$1"; out="$2"
     ver="$(tr -d ' \t\r\n' < "src/$name/VERSION")"
     case "$ver" in *[!a-z0-9.]*|'') echo "bad VERSION for $name: '$ver'" >&2; exit 1;; esac
     mkdir -p "$out/$name/$ver"
     echo "== $name@$ver: wasm =="
-    "$CC" $CFLAGS -Wl,--initial-memory="$(init_mem_for "$name")" \
-        -o "$out/$name/$ver/$name.wasm" "src/$name/$name.c"
+    if [ -f "src/$name/$name.cpp" ]; then
+        # multi-TU module: the wasi-sdk clang driver compiles .cpp inputs
+        # as C++ (dispatch by extension) but still links C-style (no C++
+        # stdlib pulled in) — exactly what a no-runtime C++ module needs.
+        # Currently jpge only.
+        "$CC" $CFLAGS $CXXFLAGS_EXTRA \
+            -Wl,--initial-memory="$(init_mem_for "$name")" \
+            -o "$out/$name/$ver/$name.wasm" \
+            "src/$name/$name.c" "src/$name/$name.cpp"
+    else
+        "$CC" $CFLAGS -Wl,--initial-memory="$(init_mem_for "$name")" \
+            -o "$out/$name/$ver/$name.wasm" "src/$name/$name.c"
+    fi
     echo "   $(wc -c < "$out/$name/$ver/$name.wasm") bytes $name.wasm  sha256 $(sha256sum "$out/$name/$ver/$name.wasm" | cut -d' ' -f1)"
     if [ -x "$WAMRC" ]; then
         echo "== $name@$ver: aot (auxiliary) =="

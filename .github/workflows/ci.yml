@@ -205,9 +205,23 @@ jobs:
           found=0
           for t in src/*/test_*.c; do
             name=$(basename "$t" .c)
-            gcc -DXUANSI_NATIVE_TEST -Wall -Wextra -Werror \
-              -I "src/$(basename "$(dirname "$t")")" -I src \
-              "$t" -o "/tmp/$name"
+            dir=$(basename "$(dirname "$t")")
+            if [ -f "src/$dir/$dir.cpp" ]; then
+              # multi-TU module (vendored C++ core — currently jpge):
+              # the module wrapper stays a unity-build C TU; the core
+              # compiles as C++ and links in (see test_jpge.c's build
+              # note). This is the ONE sanctioned deviation from the
+              # single-gcc line the pure-C modules use.
+              gcc -DXUANSI_NATIVE_TEST -Wall -Wextra -Werror \
+                -I "src/$dir" -I src -c "$t" -o "/tmp/$name.o"
+              g++ -DXUANSI_NATIVE_TEST -Wall -Wextra -Werror \
+                -I "src/$dir" -I src -c "src/$dir/$dir.cpp" \
+                -o "/tmp/$name-cpp.o"
+              g++ "/tmp/$name.o" "/tmp/$name-cpp.o" -o "/tmp/$name"
+            else
+              gcc -DXUANSI_NATIVE_TEST -Wall -Wextra -Werror \
+                -I "src/$dir" -I src "$t" -o "/tmp/$name"
+            fi
             "/tmp/$name"
             found=1
           done

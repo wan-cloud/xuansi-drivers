@@ -10,9 +10,11 @@ Current contents: `hello@1.0.0` — the ABI's reference module (full
 host-surface tour: echo/add marshalling, GPIO, timing, stream, SPI
 loopback, camera frame) — `ledwatch@1.0.0` — the ABI's first
 `algorithm` module (camera frame → LED on/off region detection; see
-"ledwatch" below) — and `st7789@1.0.0` — the ABI's first `driver`
+"ledwatch" below) — `st7789@1.0.0` — the ABI's first `driver`
 module (ST7789V 240x240 TFT panel over CS-less SPI; see "st7789"
-below).
+below) — and `jpge@0.1.0`, the B12-P0 **calibration artifact** (interp
+JPEG-encode cost measurement; built but deliberately NOT indexed — see
+"jpge" below).
 
 ## Module ABI (abi = 1, frozen)
 
@@ -146,6 +148,44 @@ bench.wasm.call("st7789", "deinit")
   unknown pattern kind); host-level refusals surface as rt exceptions.
 - st7789 uses the default 256KB initial memory (fb 115KB + stage/out/
   heap + the wasm stack) — hello's budget class.
+
+## jpge (B12-P0 calibration artifact — NOT in index.json)
+
+`jpge@0.1.0` is a **throwaway calibration module** built ahead of the
+B12 camera-migration wave (fw 0.3.0 = camera driver moved to wasm): it
+vendors the exact JPEG encoder the current fw uses (esp32-camera 2.1.8
+jpge; per-scanline RGB565→RGB888 conversion, H2V2, the fw `frame2jpg`
+quality semantics) behind the CURRENT abi=1 host face and measures the
+wasm-interp encode cost on the board (QVGA/VGA × quality → enc_ms) —
+the numbers that drive the later abi=2 phase decisions. It is built by
+`build.sh` like any module but deliberately **not listed in
+index.json** and never deployed as a deliverable; the formal abi=2
+camera module is a later task. Source layout differs from the pure-C
+modules by exactly one thing: `src/jpge/jpge.cpp` (the vendored C++
+encoder core, `-fno-rtti -fno-exceptions` — the one sanctioned
+C-flag-set deviation, see `build.sh`) linked beside the C wrapper, and
+the native test is a two-TU build (see `test_jpge.c`'s header). The
+module imports `xuansi.{camera_info,camera_frame_get,millis,
+stream_send}` plus `env.{memcpy,memset}` (WAMR libc-builtin — LLVM
+lowers the wrapper's byte-loop mem helpers to those imports).
+
+```lua
+bench.wasm.call("jpge", "grab")                 -- {off,len,w,h}
+bench.wasm.call("jpge", "encode", {quality=80}) -- {off,len} (last grab)
+bench.wasm.call("jpge", "shot",   {quality=80}) -- {len,w,h,enc_ms}
+                                               --   + one ch=2 frame
+```
+
+`shot` = grab + encode (`enc_ms` spans the encode only) + SOI/EOI gate
+(the fw's own `xs_camera.c` criteria) + one `stream_send`. Errors are
+`{error=...}` maps (no frame, encoder overflow, non-JPEG output, short
+stream); host refusals (camera off, frame over cap) raise rt as usual.
+Linear memory: static VGA-capable layout pinned at
+`--initial-memory=917504` (frame 614.4KB + JPEG out 128KB + encoder
+MCU pool 30.7KB + misc + 64KB stack); the one dynamic allocation inside
+the encoder (the MCU line pool) is a fixed arena with its high-water
+tracked — 15,360B at QVGA / 30,720B at VGA, asserted natively in
+`test_jpge.c` (T09).
 
 ## Repository layout
 

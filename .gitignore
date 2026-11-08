@@ -3,3 +3,8 @@
 /build/
 *.o
 *.tmp
+
+# B12-P0 calibration artifact: jpge builds locally (build.sh) but is a
+# throwaway calibration module — deliberately NOT committed, NOT in
+# index.json (the formal abi=2 camera module is a later task).
+/modules/jpge/
