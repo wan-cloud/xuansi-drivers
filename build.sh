@@ -41,7 +41,7 @@ init_mem_for() {  # per-module --initial-memory (64KB wasm pages)
         ledwatch) echo 720896 ;;   # 11 pages: 626.7KB arrays + 64KB stack + base
         jpge)     echo 917504 ;;   # 14 pages: VGA frame 614.4K + jpg out 128K
                                   # + mcu pool 30.7K + line 1.9K + heap/stack
-                                  # (B12-P0 calibration module; VGA-capable
+                                  # (jpge@1.0.0 codec module; VGA-capable
                                   # static layout, see src/jpge/jpge.c)
         *)        echo 262144 ;;
     esac

@@ -1,26 +1,23 @@
 /*
- * jpge.c — B12-P0 interp JPEG-encode calibration module (abi=1).
+ * jpge.c — wasm JPEG codec module (kind=codec, abi=2; jpge@1.0.0).
  *
- * THROWAWAY CALIBRATION ARTIFACT — deliberately NOT in index.json.
- * The B12 camera-migration wave (fw 0.3.0 = camera driver fully moved
- * to wasm) needs the wasm-interp cost of a software JPEG encode before
- * the abi=2 engine is designed; this module vendors the very encoder
- * the current fw uses (esp32-camera 2.1.8 jpge — byte-identical
- * conversion + subsampling + quality semantics to the fw-native
- * frame2jpg path) and measures it through the CURRENT abi=1 host face
- * on the current fw. Its numbers (enc_ms per framesize x quality, the
- * linear-memory budget) feed the later phase decisions; the formal
- * abi=2 module is a later task and does NOT reuse this code beyond
- * the vendored encoder itself.
+ * The formal successor of the B12-P0 calibration artifact (0.1.0 —
+ * deliberately never indexed): same vendored encoder core, renamed
+ * onto the abi=2 host face (cam_frame_get carries the geometry OUT
+ * with the frame — grab no longer asks a separate info call), plus
+ * stream_raw — the generic CV egress (raw RGB565 out, no JPEG).
+ * First module of kind "codec": frames in (camera), encoded or raw
+ * bytes out (stream ch=2), no hardware claim of its own.
  *
  * Canonical home: wan-cloud/xuansi-drivers (src/jpge/).
  *
- * Calling face (module_abi=1 marshalling — one msgpack array in, one
+ * Calling face (module_abi=2 marshalling — one msgpack array in, one
  * msgpack result out; see README "Module ABI"):
  *
- *   bench.wasm.call("jpge", "grab")            -- probe the camera
+ *   bench.wasm.call("jpge", "grab")               -- probe the camera
  *   bench.wasm.call("jpge", "encode", {quality})  -- re-encode last grab
- *   bench.wasm.call("jpge", "shot", {quality})     -- the P0 vehicle
+ *   bench.wasm.call("jpge", "shot", {quality})    -- grab+encode+stream
+ *   bench.wasm.call("jpge", "stream_raw")         -- grab+stream raw
  *
  *   cfg (all keys optional; unknown keys ignored — forward compat
  *   mirroring the op face):
@@ -34,33 +31,61 @@
  *                     ({error:"no frame"} before any grab)
  *   shot{quality}   -> { len, w, h, enc_ms }   grab + encode + one
  *                     stream_send (ch=2, host stamps "jpge")
+ *   stream_raw()    -> { len, w, h }           grab + one stream_send
+ *                     of the RAW RGB565 frame (len = w*h*2 — generic
+ *                     CV egress; no encode, no JPEG)
  *
- * shot pipeline: camera_info -> camera_frame_get (one fresh RGB565
- * frame, hi byte first — the GC2145 DVP wire order) -> millis ->
- * jpge_encode_rgb565 (per-scanline RGB565->RGB888 conversion, the
- * to_jpg convert_line_format big-endian path; H2V2; one static MCU
- * line pool) -> millis (enc_ms spans the encode ONLY — the honest
- * interp cost, sensor read excluded) -> SOI/EOI health check (the
- * fw's own xs_camera.c gate: first/last two bytes FFD8/FFD9) ->
- * stream_send. Encoder overflow of the 128KB output buffer, a
- * non-JPEG encoder result, or a short stream_send all surface as
- * {error:...} maps (module-side errors; host refusals — camera off,
- * frame over cap — still raise the host's rt exception).
+ * grab/shot/stream_raw share one shape: a single cam_frame_get fetches
+ * a fresh RGB565 frame (hi byte first — the GC2145 DVP wire order)
+ * and hands back its geometry through the w/h outs (abi=2: geometry
+ * rides the frame call). encode() re-encodes the LAST grabbed frame:
+ * millis -> jpge_encode_rgb565 (per-scanline RGB565->RGB888
+ * conversion, the to_jpg convert_line_format big-endian path; H2V2;
+ * one static MCU line pool) -> millis (enc_ms spans the encode ONLY —
+ * the honest interp cost, sensor read excluded) -> SOI/EOI health
+ * check (the fw's own xs_camera.c gate: first/last two bytes FFD8/
+ * FFD9) -> stream_send.
  *
- * Linear-memory budget (VGA-capable static layout; the P0 readout):
+ * Multi-chunk egress (fw >= the d874c72 stream fix): the host chunks
+ * stream_send payloads at 65,526 − 5B (the "jpge" name stamp) =
+ * 65,521B — VGA JPEGs (tens of KB..>65KB) and stream_raw VGA
+ * (614,400B = 10 chunks) are first-class shapes. A TX-full/OOM
+ * mid-stream breaks at a chunk boundary and returns the accepted
+ * PREFIX: shot and stream_raw then answer an error map carrying the
+ * honest numbers ({error, len, sent, w, h[, enc_ms]}) — the consumer
+ * sees exactly how much of the frame survived the wire. Encoder
+ * overflow of the 128KB output buffer or a non-JPEG encoder result
+ * surface as {error:...} maps (module-side errors; host refusals —
+ * camera off, frame over cap — still raise the host's rt exception).
+ *
+ * HONEST interp risk (B12-P0 measured; the VM-task TWDT kills a
+ * single wasm call > 5s): VGA q80 encode ~15s+, QVGA q60 ~3.9s on
+ * the fast-interp engine. shot() deliberately stays ONE call — VGA
+ * shots WILL trip the TWDT on interp; QVGA at q<=60 is the measured
+ * interp-safe class. The resolution is the AOT track (P3; the .aot is
+ * hash-recorded in meta), NOT slice APIs (deliberate YAGNI —
+ * re-evaluate with real-scene frames in the board batch). enc_ms
+ * keeps the cost visible per call.
+ *
+ * Linear-memory budget (VGA-capable static layout, carried from the
+ * P0 artifact):
  *   frame RGB565 614,400 + JPEG out 131,072 (the fw fmt2jpg buffer
  *   size) + jpge MCU pool 30,720 (VGA H2V2: 640*3*16) + scanline
  *   1,920 + heap 8,192 + args slot 128 + result 512 + wasm-ld 64KB
  *   stack ~= 852KB -> builds pin --initial-memory=917504 (14 pages;
- *   max stays the frozen 1MB). Everything is static .bss — the
- * per-framesize "high-water" is the layout itself; the one dynamic
- * allocation inside the encoder (the MCU line pool) is carved from a
- * fixed arena with its high-water tracked (jpge_pool_hw()): QVGA
+ *   max stays the frozen 1MB). Everything is static .bss — WAMR
+ *   builtin malloc is unavailable (heap_size=0). The one dynamic
+ *   allocation inside the encoder (the MCU line pool) is carved from
+ * a fixed arena with its high-water tracked (jpge_pool_hw()): QVGA
  * 15,360B / VGA 30,720B, asserted natively by test_jpge.c.
  */
 #include <stdint.h>
 #include <stddef.h>
 
+/* abi=2: this module imports the cam family (cam_frame_get carries the
+ * geometry out with the frame) — the retired abi=1 camera_frame_get/
+ * camera_info names must NOT appear in the import face. */
+#define XUANSI_ABI 2
 #include "xuansi_host.h"
 
 #ifndef XUANSI_ABI_OVERRIDE
@@ -340,11 +365,36 @@ static uint32_t put_err(uint8_t *p, uint32_t pos, const char *msg)
 
 static uint32_t g_flen;        /* last grabbed frame's byte count (0=none) */
 static uint32_t g_fw, g_fh;    /* its geometry */
-static uint32_t g_cam_info[3]; /* camera_info landing spot: linear .bss
-                                * (abi=1 frozen note — wasm stack slots
-                                * are on the execution page, out of the
-                                * host's write reach) */
+static uint32_t g_w_out, g_h_out; /* cam_frame_get w/h landing spots:
+                                * linear .bss (frozen note — wasm stack
+                                * slots are on the execution page, out
+                                * of the host's write reach) */
+static uint32_t g_sent;        /* stream_send accepted-count spot (same
+                                * note) */
 static uint32_t g_t0, g_t1;    /* millis landing spots (same note) */
+
+/* the one grab shape shared by grab/shot/stream_raw: a single
+ * cam_frame_get fetches a fresh RGB565 frame into frame_buf and hands
+ * back its geometry through the w/h outs (abi=2 — no separate info
+ * call). Returns the frame length; 0 = bad geometry (the caller
+ * answers the honest error map; the frozen host face raises first for
+ * the real refusal cases — camera off, frame over cap). */
+static uint32_t grab_frame(void)
+{
+    uint32_t flen = 0;
+    g_w_out = 0;
+    g_h_out = 0;
+    cam_frame_get(&flen, XUANSI_OFF(frame_buf), FRAME_CAP, &g_w_out,
+                  &g_h_out);
+    if (g_w_out == 0 || g_h_out == 0 || g_w_out > MAX_W || g_h_out > MAX_H
+        || flen != g_w_out * g_h_out * 2u) {
+        return 0;
+    }
+    g_flen = flen;
+    g_fw = g_w_out;
+    g_fh = g_h_out;
+    return flen;
+}
 
 /* encode the current frame_buf at quality q into jpg_buf;
  * returns JPEG length or 0 (encode failure) */
@@ -359,31 +409,23 @@ XUANSI_EXPORT("grab")
 uint64_t grab(uint32_t ptr, uint32_t len)
 {
     (void)jw_cfg_quality(XUANSI_IN(ptr), len);    /* tolerate stray args */
-    camera_info(g_cam_info);
-    uint32_t w = g_cam_info[0], h = g_cam_info[1];
-    uint32_t flen = 0;
-    camera_frame_get(&flen, XUANSI_OFF(frame_buf), FRAME_CAP);
-
     uint32_t pos = 0;
-    if (w == 0 || h == 0 || w > MAX_W || h > MAX_H || flen != w * h * 2u) {
+    if (grab_frame() == 0) {
         /* unreachable on the frozen host face (frame_get raises first);
          * defensive: honest error map */
         pos = put_err(out_buf, pos, "bad frame geometry");
         return pack(XUANSI_OFF(out_buf), pos);
     }
-    g_flen = flen;
-    g_fw = w;
-    g_fh = h;
 
     out_buf[pos++] = 0x84;                         /* fixmap(4) */
     pos = mp_put_str(out_buf, pos, "off");
     pos = mp_put_int(out_buf, pos, XUANSI_OFF(frame_buf));
     pos = mp_put_str(out_buf, pos, "len");
-    pos = mp_put_int(out_buf, pos, flen);
+    pos = mp_put_int(out_buf, pos, g_flen);
     pos = mp_put_str(out_buf, pos, "w");
-    pos = mp_put_int(out_buf, pos, w);
+    pos = mp_put_int(out_buf, pos, g_fw);
     pos = mp_put_str(out_buf, pos, "h");
-    pos = mp_put_int(out_buf, pos, h);
+    pos = mp_put_int(out_buf, pos, g_fh);
     return pack(XUANSI_OFF(out_buf), pos);
 }
 
@@ -413,19 +455,12 @@ XUANSI_EXPORT("shot")
 uint64_t shot(uint32_t ptr, uint32_t len)
 {
     int64_t q = jw_cfg_quality(XUANSI_IN(ptr), len);
-    camera_info(g_cam_info);
-    uint32_t w = g_cam_info[0], h = g_cam_info[1];
-    uint32_t flen = 0;
-    camera_frame_get(&flen, XUANSI_OFF(frame_buf), FRAME_CAP);
-
     uint32_t pos = 0;
-    if (w == 0 || h == 0 || w > MAX_W || h > MAX_H || flen != w * h * 2u) {
+    if (grab_frame() == 0) {
         pos = put_err(out_buf, pos, "bad frame geometry");
         return pack(XUANSI_OFF(out_buf), pos);
     }
-    g_flen = flen;
-    g_fw = w;
-    g_fh = h;
+    uint32_t w = g_fw, h = g_fh;
 
     millis(&g_t0);
     uint32_t jlen = do_encode(q);
@@ -441,23 +476,24 @@ uint64_t shot(uint32_t ptr, uint32_t len)
         return pack(XUANSI_OFF(out_buf), pos);
     }
 
-    uint32_t sent = 0;
-    stream_send(&sent, XUANSI_OFF(jpg_buf), jlen);
-    if (sent != jlen) {
+    g_sent = 0;
+    stream_send(&g_sent, XUANSI_OFF(jpg_buf), jlen);
+    if (g_sent != jlen) {
         /* honest numbers alongside the error (enc_ms survives the
-         * stream failure — the P0 calibration table needs it). The
-         * board-side cause (B12-P0 finding): fw n_stream_send's
-         * pay=malloc(len) — sub-16KB mallocs are internal-only
-         * (CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=16384) and the
-         * post-camera internal heap can't reliably serve them; ≥16KB
-         * payloads go PSRAM-eligible and stream fine. */
+         * stream failure — the cost stays visible). Truncation causes
+         * on the board are TX-full/OOM mid-chunk: the host breaks at
+         * the chunk boundary (65,521B for the "jpge" stamp) and
+         * reports the accepted prefix — sent is always a whole-chunk
+         * multiple (the d874c72 multi-chunk semantics; the historical
+         * sub-16KB malloc staging failure is FIXED there — staging is
+         * PSRAM now). */
         out_buf[pos++] = 0x86;                     /* fixmap(6) */
         pos = mp_put_str(out_buf, pos, "error");
         pos = mp_put_str(out_buf, pos, "stream_send truncated");
         pos = mp_put_str(out_buf, pos, "len");
         pos = mp_put_int(out_buf, pos, jlen);
         pos = mp_put_str(out_buf, pos, "sent");
-        pos = mp_put_int(out_buf, pos, sent);
+        pos = mp_put_int(out_buf, pos, g_sent);
         pos = mp_put_str(out_buf, pos, "w");
         pos = mp_put_int(out_buf, pos, w);
         pos = mp_put_str(out_buf, pos, "h");
@@ -476,6 +512,48 @@ uint64_t shot(uint32_t ptr, uint32_t len)
     pos = mp_put_int(out_buf, pos, h);
     pos = mp_put_str(out_buf, pos, "enc_ms");
     pos = mp_put_int(out_buf, pos, enc_ms);
+    return pack(XUANSI_OFF(out_buf), pos);
+}
+
+XUANSI_EXPORT("stream_raw")
+uint64_t stream_raw(uint32_t ptr, uint32_t len)
+{
+    (void)jw_cfg_quality(XUANSI_IN(ptr), len);    /* tolerate stray args */
+    uint32_t pos = 0;
+    if (grab_frame() == 0) {
+        pos = put_err(out_buf, pos, "bad frame geometry");
+        return pack(XUANSI_OFF(out_buf), pos);
+    }
+    uint32_t flen = g_flen, w = g_fw, h = g_fh;
+
+    /* no encode: the raw RGB565 frame IS the payload (len = w*h*2) —
+     * the generic CV egress. The host chunks it at 65,521B (VGA raw
+     * 614,400B = 10 chunks); the truncation map mirrors shot's (no
+     * enc_ms — nothing was encoded). */
+    g_sent = 0;
+    stream_send(&g_sent, XUANSI_OFF(frame_buf), flen);
+    if (g_sent != flen) {
+        out_buf[pos++] = 0x85;                     /* fixmap(5) */
+        pos = mp_put_str(out_buf, pos, "error");
+        pos = mp_put_str(out_buf, pos, "stream_send truncated");
+        pos = mp_put_str(out_buf, pos, "len");
+        pos = mp_put_int(out_buf, pos, flen);
+        pos = mp_put_str(out_buf, pos, "sent");
+        pos = mp_put_int(out_buf, pos, g_sent);
+        pos = mp_put_str(out_buf, pos, "w");
+        pos = mp_put_int(out_buf, pos, w);
+        pos = mp_put_str(out_buf, pos, "h");
+        pos = mp_put_int(out_buf, pos, h);
+        return pack(XUANSI_OFF(out_buf), pos);
+    }
+
+    out_buf[pos++] = 0x83;                         /* fixmap(3) */
+    pos = mp_put_str(out_buf, pos, "len");
+    pos = mp_put_int(out_buf, pos, flen);
+    pos = mp_put_str(out_buf, pos, "w");
+    pos = mp_put_int(out_buf, pos, w);
+    pos = mp_put_str(out_buf, pos, "h");
+    pos = mp_put_int(out_buf, pos, h);
     return pack(XUANSI_OFF(out_buf), pos);
 }
 

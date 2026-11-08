@@ -12,9 +12,10 @@ loopback, camera frame) — `ledwatch@1.0.0` — the ABI's first
 `algorithm` module (camera frame → LED on/off region detection; see
 "ledwatch" below) — `st7789@1.0.0` — the ABI's first `driver`
 module (ST7789V 240x240 TFT panel over CS-less SPI; see "st7789"
-below) — and `jpge@0.1.0`, the B12-P0 **calibration artifact** (interp
-JPEG-encode cost measurement; built but deliberately NOT indexed — see
-"jpge" below).
+below) — `gc2145@1.0.0` — the first `sensor-profile` module (the
+GC2145 bring-up sequence as module data + code; see "gc2145" below)
+— and `jpge@1.0.0` — the first `codec` module (camera frames →
+JPEG or raw RGB565 out the stream; see "jpge" below).
 
 ## Module ABI (abi = 1, frozen)
 
@@ -186,23 +187,21 @@ bench.wasm.call("gc2145", "off")                       -- cam_stop, idempotent
   issue; the module is native-tested against a fake i2c host +
   programmable PID + trap channel: 40 checks).
 
-## jpge (B12-P0 calibration artifact — NOT in index.json)
+## jpge (codec module — the first of its kind)
 
-`jpge@0.1.0` is a **throwaway calibration module** built ahead of the
-B12 camera-migration wave (fw 0.3.0 = camera driver moved to wasm): it
-vendors the exact JPEG encoder the current fw uses (esp32-camera 2.1.8
-jpge; per-scanline RGB565→RGB888 conversion, H2V2, the fw `frame2jpg`
-quality semantics) behind the CURRENT abi=1 host face and measures the
-wasm-interp encode cost on the board (QVGA/VGA × quality → enc_ms) —
-the numbers that drive the later abi=2 phase decisions. It is built by
-`build.sh` like any module but deliberately **not listed in
-index.json** and never deployed as a deliverable; the formal abi=2
-camera module is a later task. Source layout differs from the pure-C
-modules by exactly one thing: `src/jpge/jpge.cpp` (the vendored C++
-encoder core, `-fno-rtti -fno-exceptions` — the one sanctioned
-C-flag-set deviation, see `build.sh`) linked beside the C wrapper, and
-the native test is a two-TU build (see `test_jpge.c`'s header). The
-module imports `xuansi.{camera_info,camera_frame_get,millis,
+`jpge@1.0.0` is the camera-path **codec**: frames in (camera), encoded
+or raw bytes out (stream ch=2). It vendors the exact JPEG encoder the
+board's native path used (esp32-camera 2.1.8 jpge; per-scanline
+RGB565→RGB888 conversion, H2V2, the `frame2jpg` quality semantics)
+behind the abi=2 host face — `cam_frame_get` hands the geometry out
+with the frame, `stream_send` (host-stamped `"jpge"`, ch=2) is the
+egress. The B12-P0 calibration artifact (0.1.0, never indexed) proved
+the cost model; this is its formal successor. Source layout differs
+from the pure-C modules by exactly one thing: `src/jpge/jpge.cpp`
+(the vendored C++ encoder core, `-fno-rtti -fno-exceptions` — the one
+sanctioned C-flag-set deviation, see `build.sh`) linked beside the C
+wrapper, and the native test is a two-TU build (see `test_jpge.c`'s
+header). The module imports `xuansi.{cam_frame_get,millis,
 stream_send}` plus `env.{memcpy,memset}` (WAMR libc-builtin — LLVM
 lowers the wrapper's byte-loop mem helpers to those imports).
 
@@ -210,13 +209,30 @@ lowers the wrapper's byte-loop mem helpers to those imports).
 bench.wasm.call("jpge", "grab")                 -- {off,len,w,h}
 bench.wasm.call("jpge", "encode", {quality=80}) -- {off,len} (last grab)
 bench.wasm.call("jpge", "shot",   {quality=80}) -- {len,w,h,enc_ms}
-                                               --   + one ch=2 frame
+                                                --   + one ch=2 JPEG frame
+bench.wasm.call("jpge", "stream_raw")           -- {len,w,h}
+                                                --   + one ch=2 raw frame
 ```
 
 `shot` = grab + encode (`enc_ms` spans the encode only) + SOI/EOI gate
-(the fw's own `xs_camera.c` criteria) + one `stream_send`. Errors are
-`{error=...}` maps (no frame, encoder overflow, non-JPEG output, short
-stream); host refusals (camera off, frame over cap) raise rt as usual.
++ one `stream_send`. `stream_raw` = grab + one `stream_send` of the
+RAW RGB565 frame (`len = w*h*2`) — the generic CV egress, no JPEG.
+The host chunks payloads at 65,526 − 5B (the name stamp) = 65,521B;
+VGA JPEGs and `stream_raw` VGA (614,400B = 10 chunks) are first-class
+shapes, natively tested against a chunk-emulating sink. Errors are
+`{error=...}` maps (no frame, encoder overflow, non-JPEG output); a
+TX-full/OOM mid-stream truncation answers the honest numbers
+`{error, len, sent, w, h[, enc_ms]}` — exactly how much of the frame
+survived the wire. Host refusals (camera off, frame over cap) raise
+rt as usual.
+
+**Honest interp risk** (B12-P0 measured; the VM-task watchdog kills a
+single wasm call > 5s): VGA q80 encode ~15s+, QVGA q60 ~3.9s — VGA
+shots WILL trip the TWDT on the interpreter; QVGA q<=60 is the
+measured interp-safe class. `shot` deliberately stays one call; the
+resolution is the AOT track (auxiliary `.aot`, hash-recorded), not
+slice APIs.
+
 Linear memory: static VGA-capable layout pinned at
 `--initial-memory=917504` (frame 614.4KB + JPEG out 128KB + encoder
 MCU pool 30.7KB + misc + 64KB stack); the one dynamic allocation inside
@@ -270,7 +286,15 @@ is the canonical home for module sources from that point on.
 }
 ```
 
-`kind` is `"driver" | "sensor-profile" | "algorithm"`.
+`kind` is `"driver" | "sensor-profile" | "algorithm" | "codec"`.
+
+**`codec`** — landed with `jpge@1.0.0` (B12-T6, the first of its
+kind): transform modules — frames or bytes in (camera), encoded or
+re-serialized bytes out (stream ch=2), no hardware claim of their own.
+The index schema passes `kind` through verbatim (the daemon's
+driver-fetch chain treats it as an opaque label); `codec` entries
+carry `fw_compat` like `sensor-profile` (`{"wasm": ">=0.3.0"}` — the
+abi=2 host table).
 
 **`sensor-profile`** — landed with `gc2145@1.0.0` (B12-T5, the first
 abi=2 module): hot-loadable sensor description modules (SCCB register

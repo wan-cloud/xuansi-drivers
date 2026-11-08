@@ -1,6 +1,6 @@
 /*
- * test_jpge.c — native unit test for the jpge calibration module
- * (stub host). B12-P0.
+ * test_jpge.c — native unit test for the jpge codec module (stub
+ * host). B12-P0 calibration -> B12-T6 formal abi=2 module.
  *
  * Build & run (host toolchain; the vendored encoder core is C++ so the
  * native seam is two TUs — the ONE place this deviates from the
@@ -15,17 +15,25 @@
  *
  * Same seam as test_ledwatch.c: the test includes jpge.c directly (one
  * C translation unit), provides the `xuansi` host namespace as stubs,
- * and drives grab/encode/shot through the same u32-offset msgpack
- * marshalling the wasm host uses — the test owns the "linear memory"
- * arena via xuansi_native_init().
+ * and drives grab/encode/shot/stream_raw through the same u32-offset
+ * msgpack marshalling the wasm host uses — the test owns the "linear
+ * memory" arena via xuansi_native_init().
  *
- * The stub camera serves SYNTHETIC RGB565 frames (gradient + colored
- * rects) at a switchable geometry (QVGA and VGA — the P0 calibration
- * framesizes), counts camera_frame_get calls, and raises exactly like
- * the real host when the camera is off. The stub stream sink captures
- * what shot() stream_sends so the wire bytes (not just the module's
- * own buffer) are asserted: SOI/EOI, SOF geometry, determinism and
- * quality monotonicity all run against the captured JPEG.
+ * abi=2 stub host: the retired camera_frame_get/camera_info stubs are
+ * GONE (the module must not import the retired names — a stray import
+ * fails at link, which is exactly the RED the rename wants). The stub
+ * camera serves SYNTHETIC RGB565 frames (gradient + colored rects) at
+ * a switchable geometry (QVGA and VGA), counts cam_frame_get calls,
+ * and raises exactly like the real host when the camera is off.
+ *
+ * The stub stream sink emulates the fw's chunked stream_send (d874c72,
+ * xs_wasm.c n_stream_send): payloads split into chunks of 65,526 − 5B
+ * ("jpge" name stamp) = 65,521B; a TX-full mid-stream breaks at the
+ * chunk boundary and reports the accepted prefix — the shapes the
+ * module's error map (len/sent/w/h) must carry. The sink captures the
+ * chunk bytes so the WIRE (not just the module's own buffer) is
+ * asserted: SOI/EOI, SOF geometry, determinism, quality monotonicity,
+ * and stream_raw's raw-RGB565 byte-equality all run against it.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,14 +55,19 @@ static uint32_t s_w = 320, s_h = 240;         /* switchable geometry */
 static uint32_t s_frame_calls;
 static uint32_t s_ms;                          /* fake clock (+1/call) */
 
-/* staged frame (served on every camera_frame_get; last committed) */
+/* staged frame (served on every cam_frame_get; last committed) */
 #define MAXW 640u
 #define MAXH 480u
 static uint8_t s_canvas[MAXW * MAXH * 2u];
 
-/* stream sink: captures shot()'s stream_send bytes */
-static uint8_t s_sink[160 * 1024];
+/* stream sink: captures what the module stream_sends, emulating the
+ * fw chunking (see header). 640KB holds a full VGA raw frame. */
+#define STUB_CHUNK_CAP 65521u   /* 65,526 − 5B "jpge" name stamp (d874c72) */
+static uint8_t s_sink[640 * 1024];
 static uint32_t s_sink_len, s_sink_calls;
+static uint32_t s_chunks;            /* chunks actually delivered */
+static uint32_t s_tx_fail_chunk;     /* 0 = never fail; N = TX full at
+                                      * chunk index N (N chunks land) */
 
 /* trap emulation: the host refusal channel (same as test_hello/ledwatch) */
 static jmp_buf s_jmp;
@@ -70,7 +83,8 @@ static void stub_raise(const char *msg)
     longjmp(s_jmp, 1);
 }
 
-/* ---- the `xuansi` namespace stubs (only what jpge imports) ---- */
+/* ---- the `xuansi` namespace stubs (only what jpge imports — the
+ * retired abi=1 camera names are deliberately NOT provided) ---- */
 
 void xuansi_millis(uint32_t *out)
 {
@@ -78,32 +92,39 @@ void xuansi_millis(uint32_t *out)
     *out = s_ms;
 }
 
-void xuansi_camera_frame_get(uint32_t *out, uint32_t buf_off, uint32_t cap)
+void xuansi_cam_frame_get(uint32_t *len_out, uint32_t buf_off,
+                          uint32_t cap, uint32_t *w_out, uint32_t *h_out)
 {
-    if (!s_camera_on) stub_raise("xuansi.camera_frame_get: camera not on");
+    if (!s_camera_on) stub_raise("xuansi.cam_frame_get: camera not on");
     uint32_t len = s_w * s_h * 2u;
-    if (len > cap) stub_raise("xuansi.camera_frame_get: frame over cap");
+    if (len > cap) stub_raise("xuansi.cam_frame_get: frame over cap");
     memcpy(xuansi_lin_base + buf_off, s_canvas, len);
     s_frame_calls++;
-    *out = len;
-}
-
-void xuansi_camera_info(uint32_t *out)
-{
-    out[0] = s_camera_on ? s_w : 0u;
-    out[1] = s_camera_on ? s_h : 0u;
-    out[2] = (s_w == 640u) ? 1u : 0u;   /* fs_code 1=VGA 0=QVGA */
+    *len_out = len;
+    *w_out = s_w;                 /* geometry rides the call (abi=2) */
+    *h_out = s_h;
 }
 
 void xuansi_stream_send(uint32_t *out, uint32_t buf_off, uint32_t len)
 {
-    if (len > sizeof s_sink - s_sink_len) {
-        stub_raise("xuansi.stream_send: sink overflow (test harness)");
+    if (len == 0) { *out = 0; return; }   /* fw: zero-length short-path */
+    uint32_t total = (len + STUB_CHUNK_CAP - 1u) / STUB_CHUNK_CAP;
+    uint32_t sent = 0;
+    for (uint32_t k = 0; k < total; k++) {
+        if (s_tx_fail_chunk != 0 && k >= s_tx_fail_chunk) break;
+        uint32_t off = k * STUB_CHUNK_CAP;
+        uint32_t n = len - off;
+        if (n > STUB_CHUNK_CAP) n = STUB_CHUNK_CAP;
+        if (n > sizeof s_sink - s_sink_len) {
+            stub_raise("xuansi.stream_send: sink overflow (test harness)");
+        }
+        memcpy(s_sink + s_sink_len, xuansi_lin_base + buf_off + off, n);
+        s_sink_len += n;
+        sent += n;
+        s_chunks++;
     }
-    memcpy(s_sink + s_sink_len, xuansi_lin_base + buf_off, len);
-    s_sink_len += len;
     s_sink_calls++;
-    *out = len;
+    *out = sent;                  /* prefix accepted; TX-full = short */
 }
 
 /* ---- synthetic canvas -> staged frame ----------------------------
@@ -155,6 +176,8 @@ static void sink_reset(void)
 {
     s_sink_len = 0;
     s_sink_calls = 0;
+    s_chunks = 0;
+    s_tx_fail_chunk = 0;
 }
 
 /* ---- harness ---- */
@@ -211,13 +234,13 @@ static int rd_i64(int64_t *out)   /* fixint + u8/u16/u32 family */
  * try-each-key restore dance is unneeded — keys arrive in order). */
 
 typedef struct {
-    int64_t off, len, w, h, enc_ms;
+    int64_t off, len, w, h, enc_ms, sent;
     char error[64];
     int has_error;
 } shot_res_t;
 
-/* decode a flat fixmap of {off,len,w,h,enc_ms,error} — the module's
- * whole result face (int values + one optional fixstr error) */
+/* decode a flat fixmap of {off,len,w,h,enc_ms,sent,error} — the
+ * module's whole result face (int values + one optional fixstr error) */
 static int res_decode(uint64_t packed, shot_res_t *res)
 {
     memset(res, 0, sizeof *res);
@@ -246,13 +269,16 @@ static int res_decode(uint64_t packed, shot_res_t *res)
             memcpy(res->error, s_res_p + s_res_pos, sn);
             res->error[sn] = 0;
             res->has_error = 1;
+            s_res_pos += sn;    /* advance past the value — truncation
+                                 * maps carry MORE keys after "error" */
             continue;
         }
-        static const char *ikeys[5] = { "off", "len", "w", "h", "enc_ms" };
-        int64_t *dst[5] = { &res->off, &res->len, &res->w, &res->h,
-                            &res->enc_ms };
+        static const char *ikeys[6] = { "off", "len", "w", "h", "enc_ms",
+                                        "sent" };
+        int64_t *dst[6] = { &res->off, &res->len, &res->w, &res->h,
+                            &res->enc_ms, &res->sent };
         int matched = -1;
-        for (int k = 0; k < 5; k++)
+        for (int k = 0; k < 6; k++)
             if (strcmp(key, ikeys[k]) == 0) { matched = k; break; }
         if (matched < 0) return -1;                        /* unknown key */
         int64_t v;
@@ -391,7 +417,7 @@ int main(void)
     canvas_pattern();
 
     /* ---- T01 abi + allocator ---- */
-    check(xuansi_abi() == 1, "T01 xuansi_abi()==1", "");
+    check(xuansi_abi() == 2, "T01 xuansi_abi()==2", "");
     check(xuansi_alloc(0) == 0, "T01b alloc(0) refused", "");
 
     /* ---- T02 shot q80: full face + wire bytes (QVGA) ---- */
@@ -561,6 +587,109 @@ int main(void)
                  hw0, heap_off, dec, (long)res.len);
         check(dec == 0 && !res.has_error && res.len > 0 && heap_off == hw0,
               "T11 1000 cfg'd shot calls: alloc high-water stable", detail);
+    }
+
+    /* ---- T12 stream_raw QVGA: raw RGB565 egress, wire byte-equal,
+     *      multi-chunk shape (153,600B = 3 chunks @ 65,521B) ---- */
+    {
+        canvas_pattern();
+        sink_reset();
+        uint32_t r0 = s_frame_calls;
+        uint64_t r = call_mod(stream_raw, "");
+        int dec = res_decode(r, &res);
+        uint32_t want = 320u * 240u * 2u;
+        uint32_t want_chunks = (want + STUB_CHUNK_CAP - 1u) / STUB_CHUNK_CAP;
+        snprintf(detail, sizeof detail,
+                 "dec=%d err=%s len=%ld w=%ld h=%ld sink=%u chunks=%u/%u",
+                 dec, res.error, (long)res.len, (long)res.w, (long)res.h,
+                 s_sink_len, s_chunks, want_chunks);
+        int ok = dec == 0 && !res.has_error && res.len == (int64_t)want
+          && res.w == 320 && res.h == 240
+          && s_sink_calls == 1 && s_sink_len == want
+          && s_chunks == want_chunks
+          && memcmp(s_sink, s_canvas, want) == 0
+          && s_frame_calls == r0 + 1;
+        check(ok, "T12 stream_raw QVGA -> {len=153600,w,h}; wire==canvas; "
+                  "3 chunks; consumed exactly 1 frame", detail);
+    }
+
+    /* ---- T13 stream_raw VGA: 614,400B = 10 chunks (the T1-F1 shape) */
+    {
+        set_geom(640, 480);
+        canvas_pattern();
+        sink_reset();
+        uint64_t r = call_mod(stream_raw, "");
+        int dec = res_decode(r, &res);
+        uint32_t want = 640u * 480u * 2u;
+        uint32_t want_chunks = (want + STUB_CHUNK_CAP - 1u) / STUB_CHUNK_CAP;
+        snprintf(detail, sizeof detail,
+                 "dec=%d err=%s len=%ld sink=%u chunks=%u/%u",
+                 dec, res.error, (long)res.len, s_sink_len, s_chunks,
+                 want_chunks);
+        int ok = dec == 0 && !res.has_error && res.len == (int64_t)want
+          && res.w == 640 && res.h == 480 && s_sink_len == want
+          && s_chunks == want_chunks
+          && memcmp(s_sink, s_canvas, want) == 0;
+        snprintf(detail + strlen(detail), sizeof detail - strlen(detail),
+                 " (want 10 chunks)");
+        check(ok, "T13 stream_raw VGA -> 614,400B / 10 chunks, wire "
+                  "byte-equal", detail);
+        set_geom(320, 240);
+        canvas_pattern();
+    }
+
+    /* ---- T14 stream_raw mid-stream TX full: honest truncation map
+     *      (sent = 4 chunks accepted of 10; T1-F5 resilience) ---- */
+    {
+        set_geom(640, 480);
+        canvas_pattern();
+        sink_reset();
+        s_tx_fail_chunk = 4;
+        uint64_t r = call_mod(stream_raw, "");
+        s_tx_fail_chunk = 0;
+        int dec = res_decode(r, &res);
+        uint32_t want = 640u * 480u * 2u;
+        uint32_t sent_want = 4u * STUB_CHUNK_CAP;
+        snprintf(detail, sizeof detail,
+                 "dec=%d err=%s len=%ld sent=%ld sink=%u (want len=%u "
+                 "sent=%u)", dec, res.error, (long)res.len, (long)res.sent,
+                 s_sink_len, want, sent_want);
+        int ok = dec == 0 && res.has_error
+          && strstr(res.error, "truncated") != NULL
+          && res.len == (int64_t)want && res.sent == (int64_t)sent_want
+          && res.w == 640 && res.h == 480 && s_sink_len == sent_want
+          && s_chunks == 4;
+        check(ok, "T14 stream_raw TX-full mid-chunk -> {error,len,sent,w,h}",
+              detail);
+        set_geom(320, 240);
+        canvas_pattern();
+    }
+
+    /* ---- T15 stream_raw camera off: host refusal propagates ---- */
+    {
+        s_camera_on = 0;
+        EXPECT_TRAP(call_mod(stream_raw, ""), "T15 camera-off stream_raw");
+        s_camera_on = 1;
+    }
+
+    /* ---- T16 shot wire chunks: sink chunk count == ceil(len/cap)
+     *      (single- or multi-chunk JPEG egress shape, any size) ---- */
+    {
+        set_geom(640, 480);
+        canvas_pattern();
+        sink_reset();
+        uint64_t r = call_mod(shot, "quality=i:80");
+        int dec = res_decode(r, &res);
+        uint32_t want_chunks = res.len > 0
+          ? ((uint32_t)res.len + STUB_CHUNK_CAP - 1u) / STUB_CHUNK_CAP : 0;
+        snprintf(detail, sizeof detail,
+                 "dec=%d len=%ld chunks=%u/%u sink=%u",
+                 dec, (long)res.len, s_chunks, want_chunks, s_sink_len);
+        check(dec == 0 && !res.has_error && res.len > 0
+              && s_chunks == want_chunks && s_sink_len == (uint32_t)res.len,
+              "T16 shot VGA wire = ceil(len/65521) chunks", detail);
+        set_geom(320, 240);
+        canvas_pattern();
     }
 
     printf("---- test_jpge: %d checks, %d fail ----\n", checks, fails);
