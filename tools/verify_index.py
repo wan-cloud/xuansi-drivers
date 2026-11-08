@@ -7,10 +7,13 @@ Usage: verify_index.py <built-root> <committed-root> <index.json>
 
 <built-root> mirrors modules/<name>/<ver>/<file> from a scratch build;
 <committed-root> is the repository's modules/ directory. Every file the
-index lists must exist with an exact sha256/bytes match; every .aot the
-meta.json records as auxiliary is compared the same way (a mismatch is
-reported but only fails the run when --strict is given, because wamrc
-output is only reproducible across identical wamrc builds).
+index lists must exist with an exact sha256/bytes match — rebuilt from
+current sources when the scratch build produces that version, else (a
+historical entry, pinned beside a newer current version) verified in
+place against the committed artifact. Every .aot the meta.json records
+as auxiliary is compared the same way (a mismatch is reported but only
+fails the run when --strict is given, because wamrc output is only
+reproducible across identical wamrc builds).
 """
 import hashlib
 import json
@@ -47,8 +50,25 @@ def main() -> int:
             # index paths are repo-relative like modules/<n>/<v>/<file>
             got = built / Path(rel).relative_to("modules")
             if not got.is_file():
-                print(f"MISSING build output for {rel}", file=sys.stderr)
-                fails += 1
+                # Historical entry: a newer version's sources are
+                # current (e.g. ledwatch@1.0.0 pinned next to 2.0.0),
+                # so the scratch rebuild cannot produce it. The
+                # committed artifact IS that version's deliverable —
+                # verify it in place against the index pin.
+                pinned = committed / Path(rel).relative_to("modules")
+                if not pinned.is_file():
+                    print(f"MISSING build output and committed file for {rel}",
+                          file=sys.stderr)
+                    fails += 1
+                    continue
+                h = sha256(pinned)
+                ok = h == f["sha256"] and pinned.stat().st_size == f["bytes"]
+                print(f"{'OK  ' if ok else 'FAIL'} index {rel}: {h} "
+                      f"({pinned.stat().st_size}B, historical, committed)")
+                if not ok:
+                    print(f"     index says sha256={f['sha256']} "
+                          f"bytes={f['bytes']}", file=sys.stderr)
+                    fails += 1
                 continue
             h = sha256(got)
             ok = h == f["sha256"] and got.stat().st_size == f["bytes"]

@@ -1,0 +1,53 @@
+{
+  "name": "ledwatch",
+  "kind": "algorithm",
+  "version": "2.0.0",
+  "abi": 2,
+  "src_commit": "42959da68b777cb7b5c21dcdba249a2f12a174f0",
+  "src": "src/ledwatch/ledwatch.c",
+  "imports": [
+    "xuansi.cam_frame_get"
+  ],
+  "entries": [
+    {
+      "fn": "xuansi_abi",
+      "signature": "() -> u32",
+      "desc": "abi version gate; returns 2 — the module imports the abi=2 cam family only (cam_frame_get carries w/h out with the frame; zero retired camera_* names in the import table)"
+    },
+    {
+      "fn": "xuansi_alloc",
+      "signature": "(u32 n) -> u32",
+      "desc": "linear-memory offset for the host-written msgpack args; 0 = refusal"
+    },
+    {
+      "fn": "analyze",
+      "signature": "[cfg?] -> {regions=[{x,y,w,h,area,luma_mean,r_mean,g_mean,b_mean}], frame={w,h}}",
+      "desc": "one QVGA frame -> lit regions sorted by area desc, capped at max_regions. cfg (all optional, unknown keys ignored): threshold 0..255 (default 128, lit = luma >= threshold), min_area (default 16), max_regions 1..32 (default 8), discard_first (default true: consume one frame first for AWB convergence — stateless, exactly two cam_frame_get calls). Means are integers 0..255 (no floats in the abi=1 value bridge); luma = BT.601 integer approx (77R+150G+29B)>>8 with 5/6-bit components replicated to 8 bits. Camera must be on at QVGA (caller's responsibility); camera-off or larger framesizes raise the host's rt exception. Behavior byte-identical to 1.0.0 — the only change is the abi=2 import face (cam_frame_get carries geometry; camera_info retired), recompiled for the abi=2 host table."
+    }
+  ],
+  "linear_memory": {
+    "initial_bytes": 720896,
+    "max_bytes": 1048576,
+    "note": "11 wasm pages: CCL working set ~627KB (frame 153600 + u16 label map 153600 + parent 76804 + area 153608 + selected map 76804 + heap 8192 + result 4096) + wasm-ld 64KB stack. One ledwatch + one hello co-load fit the board's 1MB WAMR pool; two ledwatch instances do not (loader refuses out-of-memory)."
+  },
+  "deliverable": {
+    "path": "modules/ledwatch/2.0.0/ledwatch.wasm",
+    "sha256": "4f2e04c0a79ac7d980520d51176c93f697ef60adb8a58e154da3760a4feaa9f4",
+    "bytes": 7530
+  },
+  "auxiliary": [
+    {
+      "path": "modules/ledwatch/2.0.0/ledwatch.aot",
+      "sha256": "e3305430aa6aa602b77e08d979bc3de6db1728d660280e363733d28f42d9a577",
+      "bytes": 14724,
+      "note": "wamrc xtensa/esp32s3 output, hash-recorded for provenance. NOT deployable on the current board stack: the loader honestly refuses .aot execution (upstream ESP32-S3 AOT-in-PSRAM defect). Future-ready; never listed in index.json files[]."
+    }
+  ],
+  "fw_compat": {
+    "wasm": ">=0.3.0"
+  },
+  "toolchain": {
+    "wasi-sdk": "24.0 (LLVM 18.1.2)",
+    "wamrc": "WAMR-2.4.0 built against espressif/llvm-project xtensa_release_18.1.2"
+  }
+}

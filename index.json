@@ -30,6 +30,23 @@
       "src_commit": "d574147efcb59aea5d2212570503ebcf1eeb0fcf"
     },
     {
+      "name": "ledwatch",
+      "kind": "algorithm",
+      "version": "2.0.0",
+      "abi": 2,
+      "files": [
+        {
+          "path": "modules/ledwatch/2.0.0/ledwatch.wasm",
+          "sha256": "4f2e04c0a79ac7d980520d51176c93f697ef60adb8a58e154da3760a4feaa9f4",
+          "bytes": 7530
+        }
+      ],
+      "fw_compat": {
+        "wasm": ">=0.3.0"
+      },
+      "src_commit": "42959da68b777cb7b5c21dcdba249a2f12a174f0"
+    },
+    {
       "name": "st7789",
       "kind": "driver",
       "version": "1.0.0",
