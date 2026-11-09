@@ -114,6 +114,8 @@ uint8_t *xuansi_lin_base;
 #define XUANSI_EXPORT(name) /* native: plain symbol, no wasm attribute */
 #define LIN_OUT_OFF    0x4000u             /* result marshal buffer */
 #define LIN_ARGS_OFF   0x6000u             /* reused args slot (§3.1) */
+#define LIN_HEAP_OFF   0x7000u             /* bump arena (P3-T1: alloc
+                                            * returns heap_buf+off now) */
 #define LIN_FRAME_OFF  0x10000u            /* VGA frame buffer */
 #define LIN_JPG_OFF    0xA8000u            /* JPEG output buffer */
 void xuansi_native_init(uint8_t *base);
@@ -134,6 +136,7 @@ void xuansi_native_init(uint8_t *base);
 #ifdef XUANSI_NATIVE_TEST
 static uint32_t heap_off = 8;
 static uint8_t *args_slot;                 /* placed by xuansi_native_init() */
+static uint8_t *heap_buf;                  /* placed by xuansi_native_init() */
 #else
 static uint8_t heap_buf[HEAP_SZ] __attribute__((aligned(8), unused));
 static uint8_t args_slot[ARGS_SLOT_SZ] __attribute__((aligned(8)));
@@ -222,10 +225,17 @@ uint32_t xuansi_alloc(uint32_t n)
 {
     if (n == 0 || n > HEAP_SZ) return 0;
     if (n <= ARGS_SLOT_SZ) return XUANSI_OFF(args_slot);   /* §3.1 reuse */
+    /* P3-T1 fix: bump allocations return addresses INSIDE heap_buf.
+     * The historical code returned the bare arena offset (8..8192) —
+     * a linear address in .rodata/.data/low-.bss territory (the s_*
+     * Huffman constants live at 0x5F0..0x870!), so any >128B args write
+     * would stomp read-only-table state through a bounds-valid pointer
+     * (the fw host validates range, not ownership). No jpge face ever
+     * passes >128B args today; this closes the loaded gun anyway. */
     uint32_t off = (heap_off + 7u) & ~(uint32_t)7u;
     if (off + n > HEAP_SZ) return 0;
     heap_off = off + n;
-    return off;
+    return XUANSI_OFF(heap_buf) + off;
 }
 
 XUANSI_EXPORT("xuansi_abi")
@@ -434,7 +444,14 @@ uint64_t encode(uint32_t ptr, uint32_t len)
 {
     int64_t q = jw_cfg_quality(XUANSI_IN(ptr), len);
     uint32_t pos = 0;
-    if (g_flen == 0) {
+    /* geometry-validated no-frame guard: g_flen lives in .bss, which on
+     * the board's WAMR build boots with leftover PSRAM bytes (same class
+     * as the T8 FINDING-A dirty latch) — a bare g_flen==0 test would
+     * trust dirty state. Any garbage that fails the w*h*2 identity or
+     * the caps answers the honest "no frame" map instead of encoding
+     * noise. */
+    if (g_flen == 0 || g_fw == 0 || g_fh == 0 || g_fw > MAX_W
+        || g_fh > MAX_H || g_flen != g_fw * g_fh * 2u) {
         pos = put_err(out_buf, pos, "no frame (grab first)");
         return pack(XUANSI_OFF(out_buf), pos);
     }
@@ -564,6 +581,7 @@ void xuansi_native_init(uint8_t *base)
     xuansi_lin_base = base;
     out_buf = base + LIN_OUT_OFF;
     args_slot = base + LIN_ARGS_OFF;
+    heap_buf = base + LIN_HEAP_OFF;
     frame_buf = base + LIN_FRAME_OFF;
     jpg_buf = base + LIN_JPG_OFF;
 }

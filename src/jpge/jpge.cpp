@@ -35,6 +35,23 @@
 //      output_stream hierarchy references operator delete, so the link
 //      needs the symbols to exist. Dead code in practice — nothing is
 //      dynamically allocated.
+//   6. B12-P1 T8 FINDING-A fix (jpge@1.0.0 DHT oversize): the esp32-camera
+//      copy latched its Huffman-table init behind `m_huff_initialized`
+//      (and the quant tables behind `m_last_quality`) — static .bss state
+//      assumed to boot zeroed. True in the fw-native process (IDF zeroes
+//      .bss at boot), FALSE for a wasm instance on the board's WAMR
+//      ESP-IDF build: os_mmap (non-EXEC) is heap_caps_malloc there and
+//      memory_instantiate never memsets the linear memory, so the .bss
+//      span boots with leftover PSRAM bytes whenever the allocator
+//      reuses a dirty block. A nonzero byte at the latch skips the init
+//      and emit_dht() then emits the leftover garbage as BITS/VALS —
+//      sum(garbage) = the observed 640..3,500B DHT segments (legal is
+//      <=~275B/table) while every recomputed-from-constants field (DQT,
+//      SOF, SOS) stays correct. Fix: init is now UNCONDITIONAL per encode
+//      (the copy+compute is ~1.5k trivial ops against a 300-MCU DCT
+//      encode) plus a per-table legality gate — sum(bits[1..16]) <= 256
+//      codes — so a corrupt table can never reach the wire (jpg_open
+//      fails, encode answers its honest error map instead).
 
 #include "jpge.h"
 
@@ -93,10 +110,15 @@ namespace jpge {
 
     const int YR = 19595, YG = 38470, YB = 7471, CB_R = -11059, CB_G = -21709, CB_B = 32768, CR_R = 32768, CR_G = -27439, CR_B = -5329;
 
-    static int32 m_last_quality = 0;
+    /* change (6): m_last_quality / m_huff_initialized latches REMOVED.
+     * On the board's WAMR ESP-IDF build the .bss span boots with leftover
+     * PSRAM bytes (os_mmap = heap_caps_malloc, never zeroed; see the
+     * vendoring note) — a nonzero latch byte skipped the init and
+     * emit_dht() emitted garbage as BITS/VALS (the B12-P1 T8 FINDING-A
+     * 640..3,500B DHT oversize). Every table below is now re-derived
+     * unconditionally from the .rodata constants on EVERY encode. */
     static int32 m_quantization_tables[2][64];
 
-    static bool m_huff_initialized = false;
     static uint m_huff_codes[4][256];
     static uint8 m_huff_code_sizes[4][256];
     static uint8 m_huff_bits[4][17];
@@ -641,24 +663,35 @@ namespace jpge {
         for (int i = 1; i < m_mcu_y; i++)
             m_mcu_lines[i] = m_mcu_lines[i-1] + m_image_bpl_mcu;
 
-        if(m_last_quality != m_params.m_quality){
-            m_last_quality = m_params.m_quality;
-            compute_quant_table(m_quantization_tables[0], s_std_lum_quant);
-            compute_quant_table(m_quantization_tables[1], s_std_croma_quant);
-        }
+        /* change (6): UNCONDITIONAL per-encode table init (no latches —
+         * dirty-.bss-proof; cost is ~1.5k trivial ops against a 300-MCU
+         * DCT encode, unmeasurable in enc_ms). */
+        compute_quant_table(m_quantization_tables[0], s_std_lum_quant);
+        compute_quant_table(m_quantization_tables[1], s_std_croma_quant);
 
-        if(!m_huff_initialized){
-            m_huff_initialized = true;
+        memcpy(m_huff_bits[0+0], s_dc_lum_bits, 17);    memcpy(m_huff_val[0+0], s_dc_lum_val, DC_LUM_CODES);
+        memcpy(m_huff_bits[2+0], s_ac_lum_bits, 17);    memcpy(m_huff_val[2+0], s_ac_lum_val, AC_LUM_CODES);
+        memcpy(m_huff_bits[0+1], s_dc_chroma_bits, 17); memcpy(m_huff_val[0+1], s_dc_chroma_val, DC_CHROMA_CODES);
+        memcpy(m_huff_bits[2+1], s_ac_chroma_bits, 17); memcpy(m_huff_val[2+1], s_ac_chroma_val, AC_CHROMA_CODES);
 
-            memcpy(m_huff_bits[0+0], s_dc_lum_bits, 17);    memcpy(m_huff_val[0+0], s_dc_lum_val, DC_LUM_CODES);
-            memcpy(m_huff_bits[2+0], s_ac_lum_bits, 17);    memcpy(m_huff_val[2+0], s_ac_lum_val, AC_LUM_CODES);
-            memcpy(m_huff_bits[0+1], s_dc_chroma_bits, 17); memcpy(m_huff_val[0+1], s_dc_chroma_val, DC_CHROMA_CODES);
-            memcpy(m_huff_bits[2+1], s_ac_chroma_bits, 17); memcpy(m_huff_val[2+1], s_ac_chroma_val, AC_CHROMA_CODES);
+        compute_huffman_table(&m_huff_codes[0+0][0], &m_huff_code_sizes[0+0][0], m_huff_bits[0+0], m_huff_val[0+0]);
+        compute_huffman_table(&m_huff_codes[2+0][0], &m_huff_code_sizes[2+0][0], m_huff_bits[2+0], m_huff_val[2+0]);
+        compute_huffman_table(&m_huff_codes[0+1][0], &m_huff_code_sizes[0+1][0], m_huff_bits[0+1], m_huff_val[0+1]);
+        compute_huffman_table(&m_huff_codes[2+1][0], &m_huff_code_sizes[2+1][0], m_huff_bits[2+1], m_huff_val[2+1]);
 
-            compute_huffman_table(&m_huff_codes[0+0][0], &m_huff_code_sizes[0+0][0], m_huff_bits[0+0], m_huff_val[0+0]);
-            compute_huffman_table(&m_huff_codes[2+0][0], &m_huff_code_sizes[2+0][0], m_huff_bits[2+0], m_huff_val[2+0]);
-            compute_huffman_table(&m_huff_codes[0+1][0], &m_huff_code_sizes[0+1][0], m_huff_bits[0+1], m_huff_val[0+1]);
-            compute_huffman_table(&m_huff_codes[2+1][0], &m_huff_code_sizes[2+1][0], m_huff_bits[2+1], m_huff_val[2+1]);
+        /* change (6) gate: each table's code count must stay inside the
+         * JPEG legal span — sum(bits[1..16]) <= 256 codes (segment
+         * <= ~275B). The init above re-derives from .rodata, so this
+         * only fires if the CONSTANTS themselves were stomped (the s_*
+         * arrays sit at low linear addresses) or memory flipped
+         * mid-encode: fail jpg_open honestly (encode answers its error
+         * map) rather than put an illegal DHT on the wire. */
+        for (int t = 0; t < 4; t++) {
+            int n = 0;
+            for (int l = 1; l <= 16; l++)
+                n += m_huff_bits[t][l];
+            if (n > 256)
+                return false;
         }
 
         m_out_buf_left = JPGE_OUT_BUF_SIZE;
