@@ -208,7 +208,8 @@ int main(void)
     check(a2 == a1, "T02d small allocs reuse the slot (serialized calls)",
           "");
     uint32_t a3 = xuansi_alloc(200);
-    check(a3 == 8, "T02e large alloc bumps from 8 (one-shot path)", "");
+    check(a3 == LIN_HEAP_OFF + 8, "T02e large alloc -> heap_buf-based bump "
+          "(P3-T2 rider: no bare .rodata-range offsets)", "");
 
     /* ---- T03 echo: byte-level msgpack round-trip ---- */
     {

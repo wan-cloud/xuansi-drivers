@@ -86,6 +86,8 @@ uint8_t *xuansi_lin_base;
 #define XUANSI_EXPORT(name) /* native: plain symbol, no wasm attribute */
 #define LIN_OUT_OFF    0x4000u             /* result marshal buffer */
 #define LIN_ARGS_OFF   0x6000u             /* reused args slot (fix1) */
+#define LIN_HEAP_OFF   0x6200u             /* bump arena (P3-T2 rider:
+                                            * alloc returns heap_buf+off) */
 #define LIN_FRAME_OFF  0x10000u            /* QVGA frame buffer */
 void xuansi_native_init(uint8_t *base);
 #else
@@ -107,8 +109,15 @@ void xuansi_native_init(uint8_t *base);
 #ifdef XUANSI_NATIVE_TEST
 static uint32_t heap_off = 8;
 static uint8_t *args_slot;                 /* placed by xuansi_native_init() */
+static uint8_t *heap_buf;                  /* placed by xuansi_native_init() */
 #else
-static uint8_t heap_buf[HEAP_SZ] __attribute__((aligned(8), unused));
+/* P3-T2 rider (jpge@748506a's fix applied): heap_buf is REFERENCED now —
+ * the bump path returns heap_buf-based addresses, not the bare offsets
+ * 8..8192 it used to hand out (linear addresses in .rodata/.data
+ * territory — and the unreferenced array was optimized away, so those
+ * offsets pointed at real module state). No ledwatch face passes >128B
+ * args today; the loaded gun is closed anyway. */
+static uint8_t heap_buf[HEAP_SZ] __attribute__((aligned(8)));
 static uint8_t args_slot[ARGS_SLOT_SZ] __attribute__((aligned(8)));
 static uint32_t heap_off = 8;
 #endif
@@ -155,7 +164,7 @@ uint32_t xuansi_alloc(uint32_t n)
     uint32_t off = (heap_off + 7u) & ~(uint32_t)7u;
     if (off + n > HEAP_SZ) return 0;
     heap_off = off + n;
-    return off;
+    return XUANSI_OFF(heap_buf) + off;   /* P3-T2 rider: heap_buf-based */
 }
 
 XUANSI_EXPORT("xuansi_abi")
@@ -564,6 +573,7 @@ void xuansi_native_init(uint8_t *base)
     xuansi_lin_base = base;
     out_buf = base + LIN_OUT_OFF;
     args_slot = base + LIN_ARGS_OFF;
+    heap_buf = base + LIN_HEAP_OFF;
     frame_buf = base + LIN_FRAME_OFF;
 }
 #endif

@@ -901,6 +901,104 @@ int main(void)
               "T15 1000 cfg'd init calls: alloc high-water stable", detail);
     }
 
+    /* ================= T16 external-frame composition (P3-T2) ====
+     * The B12-P1 T8 FINDING-B scenario, native leg: a full-frame
+     * host-side xfer at the module-PUBLISHED floor (init's xfer_lo =
+     * statics_end), then blit + consecutive calls — the overlap-free
+     * window keeps every static (incl. the marshal buffer and the
+     * .rodata reply keys, which the wasm build carries in linear
+     * memory; the native seam models the layout arithmetic) intact. */
+    {
+        reset_state(0);
+        uint64_t r = call_init("");
+        int dec = res_decode(r);
+        long lo = ri("xfer_lo", -1);
+        /* native seam mirrors the built wasm: statics end (stage top)
+         * rounds to the 16-aligned floor */
+        snprintf(detail, sizeof detail, "xfer_lo=%ld want=%u dec=%d",
+                 lo, (unsigned)((LIN_STAGE_OFF + XFER_CAP + 15u) & ~15u), dec);
+        check(dec == 0 && lo == (long)((LIN_STAGE_OFF + XFER_CAP + 15u) & ~15u),
+              "T16 init publishes xfer_lo = statics ceiling", detail);
+        check(lo + 115200 <= 262144 && lo >= (long)LIN_STAGE_OFF + XFER_CAP,
+              "T16b window arithmetic: floor above statics, span fits", detail);
+
+        /* the T8 composition: 115,200B checker at [lo, lo+115200) */
+        uint8_t *fb2 = arena + lo;
+        for (uint32_t i = 0; i < 57600; i++) {
+            uint16_t px = (uint16_t)((i & 1) ? 0x0AA0 : 0xA0A0);
+            fb2[2 * i] = (uint8_t)(px >> 8);
+            fb2[2 * i + 1] = (uint8_t)px;
+        }
+        ev_reset();
+        r = call_int_fn(st_blit, 1, lo);
+        dec = res_decode(r);
+        int ok = dec == 0 && ri("ok", -1) == 1 && ri("bytes", -1) == 115200
+          && ri("chunks", -1) == 29
+          && vis(0, 0) == 0xA0A0 && vis(1, 0) == 0x0AA0
+          && vis(239, 239) == 0x0AA0;
+        check(ok, "T16c composition: xfer@xfer_lo + blit -> healthy map + "
+              "frame on glass", "");
+
+        /* consecutive consumer calls (n=3) stay healthy — the finding's
+         * "garbage maps until reload" must not reproduce */
+        r = call_int_fn(st_clear, 1, 0x001F);
+        int h1 = res_decode(r) == 0 && ri("ok", -1) == 1
+              && vis(120, 120) == 0x001F;
+        r = call_pattern("border");
+        int h2 = res_decode(r) == 0 && ri("ok", -1) == 1
+              && ri("windows", -1) == 4;
+        r = call_int_fn(st_blit, 1, lo);
+        int h3 = res_decode(r) == 0 && ri("ok", -1) == 1
+          && ri("bytes", -1) == 115200 && vis(0, 0) == 0xA0A0;
+        snprintf(detail, sizeof detail, "clear=%d border=%d blit=%d", h1, h2, h3);
+        check(h1 && h2 && h3, "T16d n=3 consecutive calls after composition",
+              detail);
+
+        /* the OLD advertised floor (8) and every statics overlap are
+         * refused cleanly now */
+        r = call_int_fn(st_blit, 1, 8);
+        ok = res_decode(r) == 0 && rstr("error")
+          && strcmp(rstr("error"), "blit offset out of bounds") == 0;
+        check(ok, "T16e the historical off=8 (T8's clobber vector) refused", "");
+        r = call_int_fn(st_blit, 1, lo - 1);
+        ok = res_decode(r) == 0 && rstr("error")
+          && strcmp(rstr("error"), "blit offset out of bounds") == 0;
+        check(ok, "T16f floor-1 refused (overlap zero is a hard bound)", "");
+        r = call_int_fn(st_blit, 1, 146944);
+        ok = res_decode(r) == 0 && ri("ok", -1) == 1
+          && ri("bytes", -1) == 115200;
+        check(ok, "T16g ceiling 146944 still streams (span ends at 262144)", "");
+    }
+
+    /* ================= T17 dirty-boot state gates (P3-T2) ==========
+     * the board boots .bss with leftover PSRAM bytes; the init token
+     * must not false-pass and the bump path must hand out heap_buf
+     * addresses, not bare .rodata/fb offsets */
+    {
+        reset_state(0);
+        st_inited = 0xDEADBEEF;                 /* simulated dirty .bss */
+        uint64_t r = call_int_fn(st_clear, 1, 0);
+        int ok = res_decode(r) == 0 && rstr("error")
+          && strcmp(rstr("error"), "not initialized") == 0;
+        check(ok, "T17a dirty nonzero st_inited does not false-pass", "");
+
+        heap_off = 0xDEADBEEF;                  /* dirty bump pointer */
+        uint32_t a = xuansi_alloc(200);
+        /* dirty heap_off must refuse (never hand out an OOB address),
+         * and after reset the bump path returns heap_buf-based offsets */
+        snprintf(detail, sizeof detail, "dirty alloc -> %u", a);
+        check(a == 0, "T17b dirty heap_off refuses rather than corrupts", detail);
+
+        reset_state(0);
+        a = xuansi_alloc(200);
+        snprintf(detail, sizeof detail, "alloc(200) -> %u want %u",
+                 a, (unsigned)(LIN_HEAP_OFF + 8));
+        check(a == LIN_HEAP_OFF + 8,
+              "T17c bump path returns heap_buf+off (not bare offsets)", detail);
+        uint32_t b = xuansi_alloc(64);
+        check(b == LIN_ARGS_OFF, "T17d small args still use the §3.1 slot", "");
+    }
+
     printf("---- test_st7789: %d checks, %d fail ----\n", checks, fails);
     return fails ? 1 : 0;
 }

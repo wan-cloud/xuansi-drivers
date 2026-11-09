@@ -64,6 +64,8 @@ uint8_t *xuansi_lin_base;                  /* test-owned linear-memory base */
 #define LIN_TX_OFF     0x6000u             /* spi_selftest scratch */
 #define LIN_RX_OFF     0x6100u
 #define LIN_SAMP_OFF   0x6200u             /* stream_out sample scratch */
+#define LIN_HEAP_OFF   0x6500u             /* bump arena (P3-T2 rider:
+                                            * alloc returns heap_buf+off) */
 void xuansi_native_init(uint8_t *base);
 #else
 #define XUANSI_IN(off) ((const uint8_t *)(uintptr_t)(off))
@@ -82,16 +84,22 @@ void xuansi_native_init(uint8_t *base);
 
 #define HEAP_SZ 8192
 #define ARGS_SLOT_SZ 128
-/* Linear-memory anchor (the bump allocator only ever hands out offsets,
- * never touches the array itself — allocated offsets land inside the
- * span this array reserves in linear memory; the unused attribute says
- * this is deliberate). */
+/* Linear-memory anchor: the bump allocator hands out heap_buf-BASED
+ * addresses (P3-T2 rider, jpge@748506a's fix applied): the historical
+ * code returned BARE arena offsets 8..8192 — linear addresses in
+ * .rodata/.data territory, and heap_buf itself was optimized away
+ * (unreferenced), so a >128B args write would stomp module state
+ * through a bounds-valid pointer (the fw host validates range, not
+ * ownership). No hello face passes >128B args today; the gun is closed
+ * anyway — hello is the template new modules copy, so the SAFE
+ * convention ships here on purpose. */
 #ifdef XUANSI_NATIVE_TEST
 /* native seam: the test arena backs the span; no anchor needed */
 static uint32_t heap_off = 8;      /* 0 must never be returned (bump from 8) */
 static uint8_t *args_slot;         /* placed by xuansi_native_init() */
+static uint8_t *heap_buf;          /* placed by xuansi_native_init() */
 #else
-static uint8_t heap_buf[HEAP_SZ] __attribute__((aligned(8), unused));
+static uint8_t heap_buf[HEAP_SZ] __attribute__((aligned(8)));
 static uint8_t args_slot[ARGS_SLOT_SZ] __attribute__((aligned(8)));
 static uint32_t heap_off = 8;      /* 0 must never be returned (bump from 8) */
 #endif
@@ -113,7 +121,7 @@ uint32_t xuansi_alloc(uint32_t n)
     uint32_t off = (heap_off + 7u) & ~(uint32_t)7u;
     if (off + n > HEAP_SZ) return 0;
     heap_off = off + n;
-    return off;
+    return XUANSI_OFF(heap_buf) + off;   /* P3-T2 rider: heap_buf-based */
 }
 
 XUANSI_EXPORT("xuansi_abi")
@@ -198,6 +206,7 @@ void xuansi_native_init(uint8_t *base)
     xuansi_lin_base = base;
     out_buf = base + LIN_OUT_OFF;
     args_slot = base + LIN_ARGS_OFF;
+    heap_buf = base + LIN_HEAP_OFF;
     frame_buf = base + LIN_FRAME_OFF;
 }
 #endif

@@ -26,7 +26,9 @@
  *     invon     bool  INVON (display inversion) at init (default true —
  *                     the common 240x240 IPS glass needs it for true
  *                     colors; eyeball-tunable without rebuilding).
- *     -> {ok=1, x_offset, mode, invon, ms}
+ *     -> {ok=1, x_offset, mode, invon, xfer_lo, ms}   xfer_lo = the
+ *        overlap-free floor for external frames: xfer the frame to
+ *        [xfer_lo, xfer_lo+115200) host-side, then blit(xfer_lo).
  *
  *   bench.wasm.call("st7789", "clear", color565?)   (default 0 = black)
  *     -> {ok=1, bytes, chunks, fill_ms, xfer_ms, total_ms}
@@ -36,9 +38,20 @@
  *     module's linear memory at buf_off to the panel. buf_off 0 (or
  *     absent) = the module's own framebuffer (re-stream the last
  *     fb-path image — the pure-SPI timing path). Nonzero buf_off must
- *     satisfy 8 <= buf_off and buf_off + 115200 <= 262144 (the frozen
- *     initial linear memory); violations return {error=...} rather
- *     than trapping.
+ *     satisfy xfer_lo <= buf_off and buf_off + 115200 <= 262144 (the
+ *     frozen initial linear memory), where xfer_lo is the module's
+ *     statics ceiling published by init (see statics_end below); the
+ *     historical floor of 8 covered the module's own statics — the
+ *     B12-P1 T8 FINDING-B overlap: a full-frame host xfer at a
+ *     then-legal offset wrote the frame over .rodata (every reply-map
+ *     key literal) and the module-state scalars, so the post-xfer blit
+ *     answered garbage maps and the instance degraded until reload.
+ *     The frame span [buf_off, buf_off+115200) may cover the wasm
+ *     stack above the statics — inter-call stack bytes are dead by
+ *     wasm semantics (frames are rebuilt per call); the composition
+ *     and consecutive-call health are pinned by tools/
+ *     verify_st7789_blit.mjs and the native T16. Violations return
+ *     {error=...} rather than trapping.
  *     -> {ok=1, bytes, chunks, xfer_ms, total_ms}   (fill_ms = 0)
  *
  *   bench.wasm.call("st7789", "pattern", kind)
@@ -86,7 +99,9 @@
  * Linear memory: fb 115,200 + stage 4,096 + out 2,048 + heap 8,192 +
  * args slot 128 + cmd 8 ~= 132KB + wasm-ld 64KB stack -> the frozen
  * default 262,144B initial (4 pages, max 1MB) — hello's budget class.
- */
+ * The external blit window [statics_end(), 146,944] sits above every
+ * static and spans the (dead inter-call) stack: statics ~131KB + frame
+ * 115.2KB fits inside 262,144 with ~16KB of legal floor headroom. */
 
 #include <stdint.h>
 #include <stddef.h>
@@ -110,11 +125,19 @@ uint8_t *xuansi_lin_base;
 #define XUANSI_IN(off) ((const uint8_t *)((size_t)xuansi_lin_base + (size_t)(uint32_t)(off)))
 #define XUANSI_OFF(p)  ((uint32_t)((size_t)(p) - (size_t)xuansi_lin_base))
 #define XUANSI_EXPORT(name) /* native: plain symbol, no wasm attribute */
-#define LIN_OUT_OFF    0x4000u             /* result marshal buffer */
-#define LIN_ARGS_OFF   0x6000u             /* reused args slot (§3.1) */
-#define LIN_CMD_OFF    0x6080u             /* 8B command / window tx */
-#define LIN_STAGE_OFF  0x6100u             /* 4KB solid-fill staging */
-#define LIN_FB_OFF     0x10000u            /* 240*240*2 framebuffer */
+/* P3-T2: the placements MIRROR the built wasm's measured static layout
+ * (llvm-nm strips data symbols; the addresses below were recovered from
+ * the module's own face — xuansi_alloc returns args_slot/heap_buf, the
+ * reply ptr is out_buf, spi_xfer carries cmd_buf/st_fb/stage_buf
+ * offsets), so the native suite exercises the same statics_end()
+ * arithmetic the board runs. Verify against tools/verify_st7789_blit.mjs
+ * when the layout shifts. */
+#define LIN_ARGS_OFF   0x4D8u             /* 1240: reused args slot */
+#define LIN_HEAP_OFF   0x558u             /* 1368: bump arena, +8192 */
+#define LIN_CMD_OFF    0x2568u            /* 9576: 8B command/window tx */
+#define LIN_FB_OFF     0x2580u            /* 9600: framebuffer, +115200 */
+#define LIN_OUT_OFF    0x1E788u           /* 124808: result marshal, +2048 */
+#define LIN_STAGE_OFF  0x1EF88u           /* 126856: 4KB fill staging */
 void xuansi_native_init(uint8_t *base);
 #else
 #define XUANSI_IN(off) ((const uint8_t *)(uintptr_t)(off))
@@ -191,12 +214,17 @@ void xuansi_native_init(uint8_t *base);
 #ifdef XUANSI_NATIVE_TEST
 static uint32_t heap_off = 8;
 static uint8_t *args_slot;                 /* placed by xuansi_native_init() */
+static uint8_t *heap_buf;                  /* bump arena (P3-T2: alloc
+                                            * returns heap_buf+off now) */
 static uint8_t *cmd_buf;                   /* 8B: command / window words */
 static uint8_t *stage_buf;                 /* 4096B solid-fill staging */
 static uint8_t *st_fb;                     /* 115,200B framebuffer */
 static uint8_t *out_buf;                   /* result marshal buffer */
 #else
-static uint8_t heap_buf[HEAP_SZ] __attribute__((aligned(8), unused));
+static uint8_t heap_buf[HEAP_SZ] __attribute__((aligned(8)));   /* P3-T2:
+ * referenced by statics_end()/xuansi_alloc, so it MATERIALIZES in the
+ * layout now (it used to be optimized away — the bump path's bare
+ * offsets 8..8192 were linear addresses inside .rodata/st_fb!). */
 static uint8_t args_slot[ARGS_SLOT_SZ] __attribute__((aligned(8)));
 static uint8_t cmd_buf[8] __attribute__((aligned(8)));
 static uint8_t stage_buf[XFER_CAP] __attribute__((aligned(8)));
@@ -209,21 +237,78 @@ static uint32_t heap_off = 8;
 static uint32_t st_gate_off = DEF_GATE_OFF; /* glass offset, gate axis */
 static uint32_t st_mode = DEF_MODE;
 static uint32_t st_invon = 1;
-static int      st_inited;
+/* P3-T2 dirty-.bss defense: on the board's WAMR build the .bss span
+ * boots with leftover PSRAM bytes (B12-P1 T8 FINDING-A — os_mmap =
+ * heap_caps_malloc, never zeroed), so a bare `st_inited` int
+ * false-passes ~half of dirty boots and draw ops would fire SPI on an
+ * unconfigured slot. The gate is a 32-bit token set by init — which
+ * re-derives gate_off/mode/invon/token on EVERY call, so nothing in
+ * the draw path trusts its boot value; random garbage matches with
+ * p = 2^-32. deinit clears it to 0 (never the token). */
+#define ST_INIT_TOKEN 0x00577899u          /* ST7789-flavored */
+static uint32_t st_inited;                 /* == token between init/deinit */
 
 /* timing landing spots (linear .bss — the host writes them; wasm stack
- * slots sit on the execution page, out of the host's reach: §2.1) */
+ * slots sit on the execution page, out of the host's reach: §2.1).
+ * g_bytes (the per-op stream tally) lives here too — declared before
+ * statics_end() accounts it. */
 static uint32_t g_t0, g_t1, g_t2, g_n, g_spi_rc;
+static uint32_t g_bytes;
 
 XUANSI_EXPORT("xuansi_alloc")
 uint32_t xuansi_alloc(uint32_t n)
 {
     if (n == 0 || n > HEAP_SZ) return 0;
     if (n <= ARGS_SLOT_SZ) return XUANSI_OFF(args_slot);   /* §3.1 reuse */
+    /* P3-T2 fix (jpge@748506a's fix1 applied here): bump allocations
+     * return addresses INSIDE heap_buf. The historical code returned
+     * the bare arena offset (8..8192) — a linear address in .rodata/
+     * .data/fb territory, and heap_buf itself was optimized away, so
+     * any >128B args write would stomp module state through a
+     * bounds-valid pointer (the fw host validates range, not
+     * ownership). No st7789 face passes >128B args today; the gun is
+     * closed anyway. */
     uint32_t off = (heap_off + 7u) & ~(uint32_t)7u;
     if (off + n > HEAP_SZ) return 0;
     heap_off = off + n;
-    return off;
+    return XUANSI_OFF(heap_buf) + off;
+}
+
+/* P3-T2 (B12-P1 T8 FINDING-B): the module's statics ceiling — the max
+ * end over EVERY in-linear-memory static, derived from SYMBOL ADDRESSES
+ * ONLY. Never from contents: the board boots .bss with leftover PSRAM
+ * bytes, and a relink that reorders .bss moves the symbols and the
+ * ceiling follows — the external blit window [statics_end(),
+ * LIN_END - FB_BYTES] is overlap-free by arithmetic, not by a hardcoded
+ * constant that a rebuild could silently invalidate. This is the value
+ * init publishes as xfer_lo (the overlap-free floor for host-side
+ * frame xfers). Native seam: scalars live in the native binary outside
+ * the arena, so only the wasm build accounts them (the mirrored
+ * placements carry the arithmetic; the wasm-level gate
+ * tools/verify_st7789_blit.mjs pins the real layout). */
+static uint32_t statics_end(void)
+{
+    uint32_t m = 0;
+#define SE_ACC(p, n) do { uint32_t e_ = XUANSI_OFF(p) + (uint32_t)(n); \
+                          if (e_ > m) m = e_; } while (0)
+    SE_ACC(args_slot, ARGS_SLOT_SZ);
+    SE_ACC(cmd_buf, 8);
+    SE_ACC(stage_buf, XFER_CAP);
+    SE_ACC(st_fb, FB_BYTES);
+    SE_ACC(out_buf, 2048);
+    SE_ACC(heap_buf, HEAP_SZ);
+#ifndef XUANSI_NATIVE_TEST
+    SE_ACC(&st_gate_off, 4); SE_ACC(&st_mode, 4); SE_ACC(&st_invon, 4);
+    SE_ACC(&st_inited, 4);   SE_ACC(&heap_off, 4);
+    SE_ACC(&g_t0, 4); SE_ACC(&g_t1, 4); SE_ACC(&g_t2, 4);
+    SE_ACC(&g_n, 4);  SE_ACC(&g_spi_rc, 4); SE_ACC(&g_bytes, 4);
+#endif
+#undef SE_ACC
+    /* align up to 16: wasm-ld 16-aligns the stack base above .bss, so
+     * the parsed statics span ends on that boundary — the floor then
+     * clears even the linker's padding bytes, and the wasm-level gate
+     * can pin overlap-zero against the parsed layout directly. */
+    return (m + 15u) & ~(uint32_t)15u;
 }
 
 XUANSI_EXPORT("xuansi_abi")
@@ -494,7 +579,6 @@ static void stage_fill(uint16_t color)
 }
 
 /* per-op stream byte tally (st_fill_win / fb_stream accumulate) */
-static uint32_t g_bytes;
 
 /* stream a solid color into a window directly from the stage (no fb).
  * The stage is a REPEATING 4KB pattern — every chunk re-streams from
@@ -600,7 +684,7 @@ uint64_t st_init(uint32_t ptr, uint32_t len)
     st_win(0, 0, PANEL_W - 1u, PANEL_H - 1u);
     st_cmd(ST_CMD_DISPON);
     millis(&g_t2);
-    st_inited = 1;
+    st_inited = ST_INIT_TOKEN;
 
     enc_t e;
     enc_begin(&e);
@@ -608,6 +692,8 @@ uint64_t st_init(uint32_t ptr, uint32_t len)
     enc_int(&e, "x_offset", st_gate_off);
     enc_int(&e, "mode", st_mode);
     enc_int(&e, "invon", st_invon);
+    enc_int(&e, "xfer_lo", statics_end());   /* overlap-free external
+                                              * frame floor (P3-T2) */
     enc_int(&e, "ms", g_t2 - g_t0);
     return enc_end(&e);
 }
@@ -615,7 +701,7 @@ uint64_t st_init(uint32_t ptr, uint32_t len)
 XUANSI_EXPORT("clear")
 uint64_t st_clear(uint32_t ptr, uint32_t len)
 {
-    if (!st_inited) return err_result("not initialized");
+    if (st_inited != ST_INIT_TOKEN) return err_result("not initialized");
     int64_t c = clamp_i64(arg_int0(XUANSI_IN(ptr), len, 0), 0, 0xFFFF);
     uint16_t color = (uint16_t)c;
 
@@ -638,10 +724,17 @@ uint64_t st_clear(uint32_t ptr, uint32_t len)
 XUANSI_EXPORT("blit")
 uint64_t st_blit(uint32_t ptr, uint32_t len)
 {
-    if (!st_inited) return err_result("not initialized");
+    if (st_inited != ST_INIT_TOKEN) return err_result("not initialized");
     int64_t off = arg_int0(XUANSI_IN(ptr), len, 0);
     if (off < 0) return err_result("blit offset out of bounds");
-    if (off != 0 && ((uint64_t)off < 8u
+    /* P3-T2 (T8 FINDING-B): the floor is the self-derived statics
+     * ceiling, NOT the historical 8 — [8, statics_end()) is the
+     * module's own .rodata/.data/.bss (reply keys, scalars, fb,
+     * marshal buffer), and a legal-looking full-frame xfer there is
+     * exactly the B12-P2 corruption. Overlap-free by arithmetic:
+     * statics_end() > every static byte, and the ceiling keeps the
+     * span inside the frozen initial memory. */
+    if (off != 0 && ((uint64_t)off < statics_end()
                      || (uint64_t)off + FB_BYTES > LIN_END))
         return err_result("blit offset out of bounds");
 
@@ -663,7 +756,7 @@ uint64_t st_blit(uint32_t ptr, uint32_t len)
 XUANSI_EXPORT("pattern")
 uint64_t st_pattern(uint32_t ptr, uint32_t len)
 {
-    if (!st_inited) return err_result("not initialized");
+    if (st_inited != ST_INIT_TOKEN) return err_result("not initialized");
     char kind[16];
     if (arg_str0(XUANSI_IN(ptr), len, kind, sizeof kind) < 0)
         return err_result("pattern kind required");
@@ -732,7 +825,7 @@ XUANSI_EXPORT("deinit")
 uint64_t st_deinit(uint32_t ptr, uint32_t len)
 {
     (void)ptr; (void)len;
-    if (!st_inited) return err_result("not initialized");
+    if (st_inited != ST_INIT_TOKEN) return err_result("not initialized");
     millis(&g_t0);
     st_cmd(ST_CMD_DISPOFF);
     delay_ms(20);
@@ -752,10 +845,11 @@ uint64_t st_deinit(uint32_t ptr, uint32_t len)
 void xuansi_native_init(uint8_t *base)
 {
     xuansi_lin_base = base;
-    out_buf = base + LIN_OUT_OFF;
     args_slot = base + LIN_ARGS_OFF;
     cmd_buf = base + LIN_CMD_OFF;
-    stage_buf = base + LIN_STAGE_OFF;
     st_fb = base + LIN_FB_OFF;
+    out_buf = base + LIN_OUT_OFF;
+    stage_buf = base + LIN_STAGE_OFF;
+    heap_buf = base + LIN_HEAP_OFF;
 }
 #endif
