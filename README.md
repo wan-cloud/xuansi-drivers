@@ -397,19 +397,24 @@ above. Pass `framesize:"QVGA"` and keep quality in the measured-safe
 class (q ≤ 60 — the block's `quality:80` is the AOT-era value) until
 P3 lands; going back to VGA then is a one-token recipe change.
 
-**VGA scenes are recipe-exclusive** (the pool budget): the WAMR pool
-is 2MB since the abi=2 wave — the 1MB pool could not hold jpge's
-917,504B static layout beside ledwatch's 720,896B, which is why it
-was widened. The recipe's pair budgets fine — gc2145 (262,144B
-initial) + jpge (917,504B) commit 1,179,648B of the 2,097,152B pool,
-leaving 917,504B: one mid-size co-load has headroom, two do not (the
-pool also carries module structures, so treat these sums as
-ceilings). A VGA scene additionally parks the ~600KB DVP frame buffer
-on the same PSRAM (allocated firmware-side, outside the pool), so
-while the recipe runs at VGA, st7789/ledwatch stay unloaded — the
-recipe's pair has the board to itself. An over-budget load meets the
-loader's honest out-of-memory refusal; the recipe doesn't rely on
-reaching it.
+**Co-load budgets — measured, not summed** (2026-11-09 board run):
+the WAMR pool is 2MB since the abi=2 wave — the 1MB pool could not
+hold jpge's 917,504B static layout beside ledwatch's 720,896B, which
+is why it was widened. On the board, all four published modules load
+and run together — gc2145 (262,144B initial) + jpge (917,504B) +
+ledwatch (720,896B) + st7789 (262,144B), an initial-memory sum of
+2,162,688B against the pool's 2,097,152B — measured stable across
+both load orders plus unload/reload cycles: the pool's bookkeeping
+is not a simple sum-of-initial-memories ceiling, and an earlier
+revision of this paragraph that ruled four-way co-residency out was
+wrong (corrected here). Two caveats remain, honestly: the loader
+still refuses with an out-of-memory error when it does run out —
+never design against the pool's last byte — and a VGA scene
+additionally parks the ~600KB DVP frame buffer on the same PSRAM
+(allocated firmware-side, outside the pool), so four-module
+co-residency under a VGA scene is unmeasured; in the interp window
+the recipe pins QVGA anyway (previous note), which is the shape the
+four-module runs were measured at.
 
 **No camera tool on the MCP face — assemble state from the modules**:
 the dedicated camera status/capture/off tools are gone; camera
