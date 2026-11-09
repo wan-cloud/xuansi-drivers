@@ -158,6 +158,17 @@ bench.wasm.call("st7789", "deinit")
 - **Wire order**: frames are RGB565 **hi byte first** — the same order
   the GC2145 camera delivers, so a QVGA crop can be blitted verbatim.
   Full frame = 115,200B in 29 `spi_xfer` chunks (engine cap 4096B).
+- **external frames** (P3-T2): `init`'s reply publishes `xfer_lo` —
+  the overlap-free floor. Host-side, xfer the frame to
+  `[xfer_lo, xfer_lo+115200)` (e.g. `bench.wasm.xfer(src, src_off,
+  "st7789", xfer_lo, 115200)`), then `blit(xfer_lo)`. The window
+  `[xfer_lo, 146944]` is provably disjoint from the module's own
+  statics (the floor is self-derived from the statics' addresses at
+  build time); the historical `[8, 146944]` window covered .rodata and
+  the state scalars — a legal-looking full-frame xfer there corrupted
+  the consumer instance (B12-P1 T8 FINDING-B; fixed in place). The
+  span may cover the wasm stack above the statics: inter-call stack
+  bytes are dead by wasm semantics (frames are rebuilt per call).
 - **patterns**: `full` (white, fb path) / `border` (four 8px white
   partial-window strips at the glass edge — the offset probe: flush at
   the edge = right candidate, inset ~80 rows = wrong) / `quad` (R/G/B/W

@@ -3,7 +3,7 @@
   "kind": "driver",
   "version": "1.0.0",
   "abi": 1,
-  "src_commit": "d574147efcb59aea5d2212570503ebcf1eeb0fcf",
+  "src_commit": "234d7ccae4a30402a7346c6ab8592d16e45a150e",
   "src": "src/hello/hello.c",
   "entries": [
     {
@@ -14,7 +14,7 @@
     {
       "fn": "xuansi_alloc",
       "signature": "(u32 n) -> u32",
-      "desc": "linear-memory offset for the host-written msgpack args; 0 = refusal"
+      "desc": "linear-memory offset for the host-written msgpack args; 0 = refusal; larger bumps return heap_buf-based addresses (P3-T2 rider: the bare-offset era handed out .rodata-range offsets and heap_buf was optimized away)"
     },
     {
       "fn": "echo",
@@ -74,14 +74,14 @@
   ],
   "deliverable": {
     "path": "modules/hello/1.0.0/hello.wasm",
-    "sha256": "f8befc84ae31bab08308cf3ccfed8be0d42667a4f9b1953fba9612c8d61c1d4c",
-    "bytes": 5707
+    "sha256": "ae789210a99482df2fbc9607b4df177a2c97009e76807c2b8098ca944744c9b0",
+    "bytes": 5714
   },
   "auxiliary": [
     {
       "path": "modules/hello/1.0.0/hello.aot",
-      "sha256": "71670c048de69b7d2a4f5a6b9fb939462b4b466eb531bafe36926e39022b45d4",
-      "bytes": 9532,
+      "sha256": "0521edcd75ff571ee650f880e11f778e89ef53b6b787fec132a951a7cf113d9a",
+      "bytes": 11860,
       "note": "wamrc xtensa/esp32s3 output, hash-recorded for provenance. NOT deployable on the current board stack: the loader honestly refuses .aot execution (upstream ESP32-S3 AOT-in-PSRAM defect). Future-ready; never listed in index.json files[]."
     }
   ],

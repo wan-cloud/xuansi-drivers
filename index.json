@@ -9,11 +9,11 @@
       "files": [
         {
           "path": "modules/hello/1.0.0/hello.wasm",
-          "sha256": "f8befc84ae31bab08308cf3ccfed8be0d42667a4f9b1953fba9612c8d61c1d4c",
-          "bytes": 5707
+          "sha256": "ae789210a99482df2fbc9607b4df177a2c97009e76807c2b8098ca944744c9b0",
+          "bytes": 5714
         }
       ],
-      "src_commit": "d574147efcb59aea5d2212570503ebcf1eeb0fcf"
+      "src_commit": "234d7ccae4a30402a7346c6ab8592d16e45a150e"
     },
     {
       "name": "ledwatch",
@@ -37,14 +37,14 @@
       "files": [
         {
           "path": "modules/ledwatch/2.0.0/ledwatch.wasm",
-          "sha256": "4f2e04c0a79ac7d980520d51176c93f697ef60adb8a58e154da3760a4feaa9f4",
-          "bytes": 7530
+          "sha256": "774df0cf27c06f297bbe7cae49379b2bfc54a2ad150e3e954c6cfacea4d056f1",
+          "bytes": 7537
         }
       ],
       "fw_compat": {
         "wasm": ">=0.3.0"
       },
-      "src_commit": "42959da68b777cb7b5c21dcdba249a2f12a174f0"
+      "src_commit": "234d7ccae4a30402a7346c6ab8592d16e45a150e"
     },
     {
       "name": "st7789",
@@ -54,11 +54,11 @@
       "files": [
         {
           "path": "modules/st7789/1.0.0/st7789.wasm",
-          "sha256": "3ab5f5149f0db79953a80404fcf19685b3f3b123f2a6155eaa352acfe1ccbf73",
-          "bytes": 12538
+          "sha256": "fb161861a19589a9b73b001c24c69bfd118f0904bd3c49f013c5565b1a630f2a",
+          "bytes": 13487
         }
       ],
-      "src_commit": "42b1ea4657830c495ef9f111752d6d542ec6024b"
+      "src_commit": "234d7ccae4a30402a7346c6ab8592d16e45a150e"
     },
     {
       "name": "gc2145",

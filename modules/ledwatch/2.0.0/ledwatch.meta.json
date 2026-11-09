@@ -3,7 +3,7 @@
   "kind": "algorithm",
   "version": "2.0.0",
   "abi": 2,
-  "src_commit": "42959da68b777cb7b5c21dcdba249a2f12a174f0",
+  "src_commit": "234d7ccae4a30402a7346c6ab8592d16e45a150e",
   "src": "src/ledwatch/ledwatch.c",
   "imports": [
     "xuansi.cam_frame_get"
@@ -17,7 +17,7 @@
     {
       "fn": "xuansi_alloc",
       "signature": "(u32 n) -> u32",
-      "desc": "linear-memory offset for the host-written msgpack args; 0 = refusal"
+      "desc": "linear-memory offset for the host-written msgpack args; 0 = refusal; larger bumps return heap_buf-based addresses (P3-T2 rider: the bare-offset era handed out .rodata-range offsets and heap_buf was optimized away)"
     },
     {
       "fn": "analyze",
@@ -32,14 +32,14 @@
   },
   "deliverable": {
     "path": "modules/ledwatch/2.0.0/ledwatch.wasm",
-    "sha256": "4f2e04c0a79ac7d980520d51176c93f697ef60adb8a58e154da3760a4feaa9f4",
-    "bytes": 7530
+    "sha256": "774df0cf27c06f297bbe7cae49379b2bfc54a2ad150e3e954c6cfacea4d056f1",
+    "bytes": 7537
   },
   "auxiliary": [
     {
       "path": "modules/ledwatch/2.0.0/ledwatch.aot",
-      "sha256": "e3305430aa6aa602b77e08d979bc3de6db1728d660280e363733d28f42d9a577",
-      "bytes": 14724,
+      "sha256": "b88b629c17da4d5924e129b7e95bcf5506a720544b51f4cfe94d7c5c5af5542b",
+      "bytes": 14700,
       "note": "wamrc xtensa/esp32s3 output, hash-recorded for provenance. NOT deployable on the current board stack: the loader honestly refuses .aot execution (upstream ESP32-S3 AOT-in-PSRAM defect). Future-ready; never listed in index.json files[]."
     }
   ],
