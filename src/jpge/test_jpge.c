@@ -26,8 +26,8 @@
  * a switchable geometry (QVGA and VGA), counts cam_frame_get calls,
  * and raises exactly like the real host when the camera is off.
  *
- * The stub stream sink emulates the fw's chunked stream_send (d874c72,
- * xs_wasm.c n_stream_send): payloads split into chunks of 65,526 − 5B
+ * The stub stream sink emulates the host's chunked stream_send (the
+ * stream native): payloads split into chunks of 65,526 − 5B
  * ("jpge" name stamp) = 65,521B; a TX-full mid-stream breaks at the
  * chunk boundary and reports the accepted prefix — the shapes the
  * module's error map (len/sent/w/h) must carry. The sink captures the
@@ -696,7 +696,7 @@ int main(void)
 
     /* ground-truth dump (B12-P0 pixel-level verification): the module-
      * encoded JPEG of the synthetic pattern, for host-side PIL pixel
-     * checks (see tools/b12-p1-hil evidence). Rects at QVGA: red at
+     * checks (see the wave's HIL evidence). Rects at QVGA: red at
      * (40,30)+80x40, green at (160,30)+80x40, blue at (120,120)+80x40
      * on the gradient. */
     if (getenv("JPGE_DUMP")) {

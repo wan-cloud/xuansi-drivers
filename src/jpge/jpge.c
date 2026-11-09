@@ -43,7 +43,7 @@
  * conversion, the to_jpg convert_line_format big-endian path; H2V2;
  * one static MCU line pool) -> millis (enc_ms spans the encode ONLY —
  * the honest interp cost, sensor read excluded) -> SOI/EOI health
- * check (the fw's own xs_camera.c gate: first/last two bytes FFD8/
+ * check (the board's JPEG gate: first/last two bytes FFD8/
  * FFD9) -> stream_send.
  *
  * Multi-chunk egress (fw >= the d874c72 stream fix): the host chunks
@@ -467,7 +467,7 @@ uint64_t shot(uint32_t ptr, uint32_t len)
     millis(&g_t1);
     uint32_t enc_ms = g_t1 - g_t0;
 
-    /* SOI/EOI health check — the fw's own gate (xs_camera.c): a
+    /* SOI/EOI health check — the board's JPEG gate: a
      * zero return or a bad marker pair must not reach the stream. */
     if (jlen < 4 || jpg_buf[0] != 0xFF || jpg_buf[1] != 0xD8
         || jpg_buf[jlen - 2] != 0xFF || jpg_buf[jlen - 1] != 0xD9) {

@@ -38,8 +38,30 @@ A module is a `wasm32` build (wasi-sdk, no WASI imports) that:
 Limits (frozen): args/result msgpack ≤ 8192B, container depth ≤ 8,
 module file ≤ 256KB, module memory 256KB initial / 1MB max.
 
-Adding symbols or changing semantics means `abi = 2` — existing symbol
-semantics never move.
+### abi = 2 (camera migration, 2026-11-09)
+
+The camera-migration wave revised the symbol table — a one-time
+exemption while the project had no external users (from abi=3 on the
+table is strictly additive again):
+
+- **new (9)**: `i2c_config`, `i2c_write`, `i2c_read`, `i2c_writeread`
+  (self-configured I2C master, pins claimed prim=i2c) and `cam_xclk`,
+  `cam_start`, `cam_stop`, `cam_frame_get`, `cam_frame_info` (the
+  parallel-capture DVP stream; `cam_frame_get` hands the frame's
+  geometry out through w/h outs).
+- **retired (2)**: `camera_frame_get` / `camera_info`, renamed onto
+  `cam_frame_get` (geometry now rides the frame call) /
+  `cam_frame_info` (reshaped to w/h/pixfmt/on). An abi=1 binary
+  importing the retired names is refused at link time; the rest of
+  the abi=1 face is untouched (st7789@1 loads as-is; ledwatch
+  recompiled to 2.0.0 for the rename).
+
+A module declares abi=2 with `#define XUANSI_ABI 2` before including
+`src/xuansi_host.h`; the loader gate accepts abi∈{1,2}.
+
+Further symbol additions or semantic changes mean a new abi version —
+from abi=3 on the table is strictly additive (the abi=2 retirements
+were the one-time exemption above).
 
 ## Delivery track: `.wasm` bytecode
 
@@ -74,9 +96,9 @@ bench.wasm.call("ledwatch", "analyze", cfg)
 ```
 
 Regions are sorted by area (largest first) and capped at
-`max_regions`. All means are integers 0..255 (the abi=1 value bridge
-carries no floats): RGB565 components replicated into 8 bits, means
-rounded to nearest, luma = BT.601 integer approximation
+`max_regions`. All means are integers 0..255 (the frozen int-only
+value bridge carries no floats): RGB565 components replicated into
+8 bits, means rounded to nearest, luma = BT.601 integer approximation
 `(77R + 150G + 29B) >> 8` (pure red is luma 76 — pass a lower
 threshold when hunting red-only LEDs). The camera must already be on
 at QVGA (caller's responsibility, same contract as hello's
@@ -179,6 +201,10 @@ bench.wasm.call("gc2145", "off")                       -- cam_stop, idempotent
   included) after cam_stop + settle; **off** is cam_stop (host
   idempotent) + module off; **info** is `cam_frame_info` passthrough
   plus the module's last framesize.
+- **known claim asymmetry (F-3)**: the SCCB pins 4/5 i2c claim
+  persists across `off()` (the i2c face has no release); it clears on
+  session reset — meanwhile an op-path capture wanting those pins is
+  refused with a message naming the pin and owner.
 - Static memory only (instance heap_size=0): table in .rodata, §3.1
   args-slot reuse; default 256KB initial memory (~4KB used).
 - `fw_compat: {wasm>=0.3.0}` — needs the abi=2 host table (fw 0.3.0);
