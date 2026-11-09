@@ -115,9 +115,12 @@ checkerboard vector pins the worst case.
 
 ledwatch pins `--initial-memory=720896` (11 pages): its CCL working
 set (~627KB: frame + label map + per-label arrays) plus the wasm
-stack. One ledwatch + one hello co-load fit the board's 1MB WAMR
-pool; two ledwatch instances do not (the loader refuses with an
-honest out-of-memory error).
+stack. Through the abi=1 waves the WAMR pool was 1MB: one ledwatch +
+one hello co-load fit it; two ledwatch instances did not (the loader
+refuses with an honest out-of-memory error). The abi=2 wave widened
+the pool to 2MB — jpge's 917,504B static layout beside ledwatch no
+longer fits 1MB — and co-load budgets now read against 2MB (see
+"Agent camera recipe" below).
 
 ## st7789 (driver module)
 
@@ -329,6 +332,93 @@ DVP sensor becomes a data file instead of a firmware rebuild. The
 gc2145 entry additionally carries `fw_compat` (the fw floor the
 module's imports need — `{"wasm": ">=0.3.0"}` for the abi=2 host
 table); the daemon's driver-fetch chain reads it (B12-T8).
+
+## Agent camera recipe (photo walkthrough)
+
+The camera-path modules compose into the end-to-end photo recipe —
+every step an MCP tool call, no shell anywhere. This block is the
+canonical recipe text; the B12-T8 HIL scenario pins it verbatim. It
+is the primitive chain, not literal JSON (each tool call carries its
+board/code arguments as usual):
+
+```
+xuansi_driver_fetch{name:"gc2145"} / {name:"jpge"}     # 缺省 latest
+xuansi_driver_push ×2
+xuansi_run_lua{budget_ms:10000, code: load×2 → gc2145.init{framesize:"VGA"}
+              → jpge.shot{quality:80} → gc2145.off()}   # 冷板收尾
+  ↳ frames=[{ch:2,name:"jpge",data_b64}] → agent 存檔＋sha256
+```
+
+Line by line: `xuansi_driver_fetch` pulls each module from this repo's
+`index.json` (version omitted = latest), `xuansi_driver_push` deploys
+both to `/drv/<name>.wasm` under the held lease, and the single eval
+call chains `bench.wasm.load` (gc2145, jpge) → `gc2145.init` →
+`jpge.shot` → `gc2145.off`. Two reply-side primitives carry it:
+
+- **`budget_ms`** (1..30000) — a per-call eval budget: it overrides
+  the session budget for this one call (omit it, or pass 0, to ride
+  the session budget as before; `xuansi_submit` takes the same key
+  and applies it to the queued job while its ack stays immediate).
+  The recipe declares 10000 because the modules need it honestly:
+  `init` alone has a ~2.5s wall (sensor power-up + AE/AWB convergence
+  — not interpreter overhead) and the shot's encode rides on top; the
+  daemon's reply wait derives from the effective budget (budget + 2s,
+  under its 60s per-request ceiling). Honest limit: it does not
+  exempt a single long module call from the VM-task watchdog (> 5s
+  one-call still trips) — which is exactly why the interp window
+  below pins QVGA.
+- **`frames`** — the reply carries `frames:[{ch, name, data_b64}]`:
+  the stream frames that arrived on the connection during the call,
+  any channel, `name` the host-stamped module name (a jpge `shot`
+  lands as `{ch:2, name:"jpge"}`; a submit job's frames ride its job
+  event instead). Bounded at 16 frames / 1 MiB cumulative;
+  `frames_dropped` counts the honest losses (chunk gaps included) and
+  appears only when something was dropped; when nothing streamed the
+  whole field is absent — the reply shape existing callers know is
+  unchanged. There is no server-side capture path: the agent decodes
+  the base64, writes the file and takes its own sha256.
+
+**冷板收尾 (cold-board finish) — `gc2145.off()` is deliberately the
+last step**: it stops the stream, releases the camera pins (the DVP
+set plus XCLK) and hands the frame-buffer memory back; the call is
+idempotent. The documented F-3 exception still holds — the SCCB i2c
+claim on pins 4/5 persists across `off()` and clears on session reset
+(see "gc2145" above).
+
+**The interp transition window pins QVGA** (until the AOT track — P3 —
+lands): the recipe is written at its target shape (VGA, in-module
+encode), but on today's interpreter a VGA `shot` is a single ~15s+
+encode that WILL trip the 5s VM-task watchdog (measured on the board —
+task-wdt panic, self-healed; the interp tax is 30-50× over native).
+QVGA is the interp-window framesize on two hard legs of evidence: a
+q60 encode measured ~3s on scene frames (~3.9s on noisy ones — green
+even against the 4s session-budget ceiling), and the VGA watchdog trip
+above. Pass `framesize:"QVGA"` and keep quality in the measured-safe
+class (q ≤ 60 — the block's `quality:80` is the AOT-era value) until
+P3 lands; going back to VGA then is a one-token recipe change.
+
+**VGA scenes are recipe-exclusive** (the pool budget): the WAMR pool
+is 2MB since the abi=2 wave — the 1MB pool could not hold jpge's
+917,504B static layout beside ledwatch's 720,896B, which is why it
+was widened. The recipe's pair budgets fine — gc2145 (262,144B
+initial) + jpge (917,504B) commit 1,179,648B of the 2,097,152B pool,
+leaving 917,504B: one mid-size co-load has headroom, two do not (the
+pool also carries module structures, so treat these sums as
+ceilings). A VGA scene additionally parks the ~600KB DVP frame buffer
+on the same PSRAM (allocated firmware-side, outside the pool), so
+while the recipe runs at VGA, st7789/ledwatch stay unloaded — the
+recipe's pair has the board to itself. An over-budget load meets the
+loader's honest out-of-memory refusal; the recipe doesn't rely on
+reaching it.
+
+**No camera tool on the MCP face — assemble state from the modules**:
+the dedicated camera status/capture/off tools are gone; camera
+knowledge now lives entirely in the modules. Whatever an agent (or a
+HIL check) wants to know about camera state, it assembles from the
+two existing paths: `bench.wasm.call("gc2145", "info")` — the host
+camera-state passthrough plus the module's last framesize — and the
+`diag.pins` bench op, the pin-claim table (which owner holds which
+pin).
 
 ## Toolchain (pinned)
 
