@@ -3,8 +3,8 @@
   "kind": "codec",
   "version": "1.0.0",
   "abi": 2,
-  "src_commit": "0bae9a42c919bce2a88b0ca9d0bb7af60ef0658f",
-  "src": "src/jpge/jpge.c (+ src/jpge/jpge.cpp — vendored encoder core)",
+  "src_commit": "748506a75184254ac01a6f9e52cdfa5318935700",
+  "src": "src/jpge/jpge.c (+ src/jpge/jpge.cpp — vendored encoder core, change (6) de-latched table init)",
   "imports": [
     "xuansi.millis",
     "xuansi.cam_frame_get",
@@ -50,19 +50,19 @@
   "hardware": {
     "consumes": "the bench camera stream (GC2145 DVP epoch; RGB565 hi-byte-first, QVGA 320x240 / VGA 640x480); bring-up is gc2145@1.0.0's job — this module claims no hardware of its own",
     "egress": "stream ch=2 frames host-stamped 'jpge' (JPEG for shot, raw RGB565 for stream_raw)",
-    "encoder_provenance": "vendored from espressif/esp32-camera 2.1.8 jpge (Apache-2.0; public upstream) — byte-identical conversion/subsampling/quality semantics to the board's former native frame2jpg path"
+    "encoder_provenance": "vendored from espressif/esp32-camera 2.1.8 jpge (Apache-2.0; public upstream) — byte-identical conversion/subsampling/quality semantics to the board's former native frame2jpg path. P3-T1 (2026-11-10): change (6) — the Huffman/quant table init latches removed (unconditional per-encode re-derivation + sum(bits)<=256 legality gate); the board WAMR ESP-IDF build boots instance .bss dirty (os_mmap=heap_caps_malloc, never zeroed), and a dirty latch byte emitted garbage DHT tables (B12-P1 T8 FINDING-A: 640..3,500B segments vs legal <=~275B)."
   },
   "deliverable": {
     "path": "modules/jpge/1.0.0/jpge.wasm",
-    "sha256": "c0d6a97c31c516c03a1af795c6376dfb52de5a77474990f4d9b791408916472c",
-    "bytes": 28411
+    "sha256": "b44ab1a7faad32a76c3b5834f850192e4837e60d60c42e051a45396593393d06",
+    "bytes": 28642
   },
   "auxiliary": [
     {
       "path": "modules/jpge/1.0.0/jpge.aot",
-      "sha256": "1fe13f8fceea45886afdb7f53d0aef2090fac0a807a031ce265790fb17e4ea48",
-      "bytes": 90936,
-      "note": "wamrc xtensa/esp32s3 output, hash-recorded for provenance. NOT deployable on the current board stack (loader honestly refuses .aot execution — upstream ESP32-S3 AOT-in-PSRAM defect). Future-ready (the documented interp TWDT resolution); never listed in index.json files[]."
+      "sha256": "8c0d59d2c37c1b277647b2c64f07fa2a3b4972fb8c9e23673257d9362b10b80c",
+      "bytes": 92828,
+      "note": "wamrc xtensa/esp32s3 output, hash-recorded for provenance. NOT deployable on the current board stack (loader honestly refuses .aot execution — upstream ESP32-S3 AOT-in-PSRAM defect). Future-ready (the documented interp TWDT resolution); never listed in index.json files[]. Re-pinned by the P3-T1 DHT fix rebuild (same source semantics; hash-recorded for provenance)."
     }
   ],
   "fw_compat": {

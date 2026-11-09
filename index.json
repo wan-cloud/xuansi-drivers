@@ -85,14 +85,14 @@
       "files": [
         {
           "path": "modules/jpge/1.0.0/jpge.wasm",
-          "sha256": "c0d6a97c31c516c03a1af795c6376dfb52de5a77474990f4d9b791408916472c",
-          "bytes": 28411
+          "sha256": "b44ab1a7faad32a76c3b5834f850192e4837e60d60c42e051a45396593393d06",
+          "bytes": 28642
         }
       ],
       "fw_compat": {
         "wasm": ">=0.3.0"
       },
-      "src_commit": "0bae9a42c919bce2a88b0ca9d0bb7af60ef0658f"
+      "src_commit": "748506a75184254ac01a6f9e52cdfa5318935700"
     }
   ]
 }
