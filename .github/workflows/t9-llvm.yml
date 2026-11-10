@@ -59,16 +59,16 @@ jobs:
       - name: fetch the llvm-project fork at the requested ref
         run: |
           set -eux
-          git init -q llvm
-          git -C llvm remote add origin https://github.com/wan-cloud/llvm-project.git
-          git -C llvm fetch --depth 1 origin "$BUILD_REF"
-          git -C llvm checkout FETCH_HEAD
-          git -C llvm log -1 --format='llvm at %H %ci %s'
+          git init -q llvm-project
+          git -C llvm-project remote add origin https://github.com/wan-cloud/llvm-project.git
+          git -C llvm-project fetch --depth 1 origin "$BUILD_REF"
+          git -C llvm-project checkout FETCH_HEAD
+          git -C llvm-project log -1 --format='llvm at %H %ci %s'
 
       - name: source sha
         id: src
         run: |
-          sha="$(git -C llvm rev-parse HEAD)"
+          sha="$(git -C llvm-project rev-parse HEAD)"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "ref8=${sha:0:8}" >> "$GITHUB_OUTPUT"
 
@@ -76,7 +76,7 @@ jobs:
         id: llvm-cache
         uses: actions/cache@v4
         with:
-          path: llvm/build
+          path: llvm-project/build
           key: t9-llvm-build-${{ steps.src.outputs.sha }}-notools-linux-x64
 
       - name: deps
@@ -86,7 +86,7 @@ jobs:
         if: steps.llvm-cache.outputs.cache-hit != 'true'
         run: |
           set -eux
-          cmake -G Ninja -S llvm -B llvm/build \
+          cmake -G Ninja -S llvm-project/llvm -B llvm-project/build \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX="$PWD/llvm-pkg" \
             -DLLVM_TARGETS_TO_BUILD="AArch64;ARM;Mips;RISCV;X86" \
@@ -96,23 +96,23 @@ jobs:
             -DLLVM_TOOL_REMARKS_SHLIB_BUILD=OFF \
             -DCMAKE_CXX_FLAGS="-include cstdint" \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
-          ninja -C llvm/build
+          ninja -C llvm-project/build
 
       - name: build llvm-config (tool; cheap)
-        run: ninja -C llvm/build llvm-config
+        run: ninja -C llvm-project/build llvm-config
 
       - name: save the LLVM build tree
         if: steps.llvm-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
-          path: llvm/build
+          path: llvm-project/build
           key: t9-llvm-build-${{ steps.src.outputs.sha }}-notools-linux-x64
 
       - name: install LLVM into the package tree + completeness gate
         run: |
           set -eux
-          test -f llvm/build/build.ninja
-          ninja -C llvm/build install
+          test -f llvm-project/build/build.ninja
+          ninja -C llvm-project/build install
           test -d llvm-pkg/lib/cmake/llvm
           ls llvm-pkg/lib/libLLVM*.a >/dev/null
           test -x llvm-pkg/bin/llvm-tblgen
