@@ -370,6 +370,9 @@ jobs:
                   if not pool_before_reloc:
                       failures.append(f"{m}: xuansi.literal not before RELOCATION "
                                       "(old-runtime honest refusal broken)")
+                  if types.get(20, 0) != 0:
+                      failures.append(f"{m}: R_XTENSA_SLOT0_OP == {types.get(20, 0)} "
+                                      "in the surgery container (want 0)")
 
               # ---------- stock container (regression) ----------
               buf = open(f"t10out/{m}.stock.aot", "rb").read()
@@ -388,7 +391,8 @@ jobs:
                       if got and got[0] == "xuansi.literal":
                           pool = True
               groups, types = relocation_census(buf)
-              stock_ok_order = all(t == 100 for t in order[order.index(5):]) if 5 in order else False
+              # customs are legal only AFTER the relocation section
+              stock_ok_order = all(t == 100 for t in order[order.index(5)+1:]) if 5 in order else False
               row = dict(mod=m, kind="stock", literal_size=lit_sz,
                          pool_section=pool, order_stock_shape=stock_ok_order,
                          slot0=types.get(20, 0), r32=types.get(1, 0),
