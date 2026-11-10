@@ -1,0 +1,386 @@
+name: t9-llvm
+
+# P3 Task 9 (LLVM fork surgery: literal pool out of exec text + literal
+# base register). Hosted in xuansi-drivers because Actions on the
+# wan-cloud/llvm-project fork is administratively suspended by GitHub
+# (HTTP 422 "Actions has been disabled for this repository"; no run can
+# be created there since 2026-11-09T18:34Z). The LLVM source is still
+# fetched from the llvm-project fork - only the RUNNER moves. This
+# workflow does not touch the deliverable pipeline: no toolchain
+# release, no ci.yml wiring, no module rebuilds.
+#
+# One dispatch = one full loop:
+#   job llvm  : build the llvm-dev package from wan-cloud/llvm-project
+#               at <llvm_ref> (same recipe as llvm-project build-llvm.yml,
+#               linux leg, libraries-only), upload as a run artifact.
+#   job wamrc : build wamr-compiler from WAMR (esp fork = board runtime
+#               source) against the package, instrumented to dump the
+#               real .o; compile the five driver modules; assert at the
+#               ELF/object level (mode=surgery):
+#                 1. .literal section is SHF_ALLOC without SHF_EXECINSTR
+#                 2. R_XTENSA_SLOT0_OP count == 0 (no l32r to the pool)
+#                 3. literal base chain (l32i a?, a2, 8 / l32i a?, a?, 64)
+#                    present in the disassembly; no l32r anywhere
+#                 4. all five modules compile
+#               mode=record only records (baseline-shaped runs).
+
+on:
+  workflow_dispatch:
+    inputs:
+      llvm_ref:
+        description: "wan-cloud/llvm-project ref to build (branch or sha)"
+        required: true
+        default: "xuansi/a3-surgery"
+      wamr_sha:
+        description: "WAMR commit to build wamrc from (esp fork = board runtime source)"
+        required: true
+        default: "8f806e0f2c02a768d2c35044f2964f769612d9bc"
+      mode:
+        description: "surgery = assert the gates; record = dump only"
+        required: true
+        default: "surgery"
+      mllvm:
+        description: "extra --mllvm flags for wamrc (e.g. xuansi-literal-base=0 for A/B)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  llvm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    outputs:
+      sha: ${{ steps.src.outputs.sha }}
+    env:
+      BUILD_REF: ${{ inputs.llvm_ref }}
+    steps:
+      - name: fetch the llvm-project fork at the requested ref
+        run: |
+          set -eux
+          git init -q llvm-project
+          git -C llvm-project remote add origin https://github.com/wan-cloud/llvm-project.git
+          git -C llvm-project fetch --depth 1 origin "$BUILD_REF"
+          git -C llvm-project checkout FETCH_HEAD
+          git -C llvm-project log -1 --format='llvm at %H %ci %s'
+
+      - name: source sha
+        id: src
+        run: |
+          sha="$(git -C llvm-project rev-parse HEAD)"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "ref8=${sha:0:8}" >> "$GITHUB_OUTPUT"
+
+      - name: restore the LLVM build tree (keyed on the source sha)
+        id: llvm-cache
+        uses: actions/cache@v4
+        with:
+          path: llvm-project/build
+          key: t9-llvm-build-${{ steps.src.outputs.sha }}-notools-linux-x64
+
+      # A cache hit restores the BUILD tree, but the source fetch above
+      # wrote every source file with a fresh mtime, which would make
+      # every ninja target look dirty again (the first rerun of this
+      # workflow re-paid a full 37-minute rebuild inside "ninja
+      # install" because of exactly this). Backdate all source files so
+      # the restored build outputs stay newer than their inputs.
+      - name: backdate sources after a cache hit (keep outputs up to date)
+        if: steps.llvm-cache.outputs.cache-hit == 'true'
+        run: find llvm-project -path llvm-project/build -prune -o -type f -exec touch -d '2020-01-01' {} +
+
+      - name: deps
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ninja-build ccache zstd
+
+      - name: configure + build LLVM (only on cache miss)
+        if: steps.llvm-cache.outputs.cache-hit != 'true'
+        run: |
+          set -eux
+          cmake -G Ninja -S llvm-project/llvm -B llvm-project/build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$PWD/llvm-pkg" \
+            -DLLVM_TARGETS_TO_BUILD="AArch64;ARM;Mips;RISCV;X86" \
+            -DLLVM_EXPERIMENTAL_TARGETS_TO_BUILD=Xtensa \
+            -DLLVM_BUILD_TOOLS=OFF \
+            -DLLVM_TOOL_LTO_BUILD=OFF \
+            -DLLVM_TOOL_REMARKS_SHLIB_BUILD=OFF \
+            -DCMAKE_CXX_FLAGS="-include cstdint" \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          ninja -C llvm-project/build
+
+      - name: build llvm-config (tool; cheap)
+        run: ninja -C llvm-project/build llvm-config
+
+      - name: save the LLVM build tree
+        if: steps.llvm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: llvm-project/build
+          key: t9-llvm-build-${{ steps.src.outputs.sha }}-notools-linux-x64
+
+      - name: install LLVM into the package tree + completeness gate
+        run: |
+          set -eux
+          test -f llvm-project/build/build.ninja
+          ninja -C llvm-project/build install
+          test -d llvm-pkg/lib/cmake/llvm
+          ls llvm-pkg/lib/libLLVM*.a >/dev/null
+          test -x llvm-pkg/bin/llvm-tblgen
+          cp llvm-project/build/bin/llvm-config llvm-pkg/bin/llvm-config
+          llvm_version="$(llvm-pkg/bin/llvm-config --version)"
+          python3 - <<'EOF'
+          import re, sys
+          from pathlib import Path
+          prefix = Path("llvm-pkg")
+          refs = set()
+          for f in (prefix / "lib/cmake/llvm").glob("LLVMExports*.cmake"):
+              refs |= set(re.findall(r'\$\{_IMPORT_PREFIX\}/(\S+?)(?=["\s])', f.read_text()))
+          missing = sorted(r for r in refs if not (prefix / r).exists())
+          if missing:
+              sys.exit(f"exports reference files missing from the package: {missing}")
+          print(f"exports completeness: OK ({len(refs)} referenced files present)")
+          EOF
+          mkdir -p dist
+          asset="dist/llvm-xtensa-dev-${{ steps.src.outputs.ref8 }}-linux-x64.tar.zst"
+          ( cd llvm-pkg && tar --zstd -cf "../$asset" \
+              bin/llvm-config* bin/llvm-tblgen lib/libLLVM*.a \
+              lib/cmake/llvm include/llvm include/llvm-c )
+          ( cd dist && sha256sum "$(basename "$asset")" > llvm-dev.sha256 )
+          printf '{\n "source_sha": "%s",\n "built_from_ref": "%s",\n "llvm_version": "%s",\n "built": "%s"\n}\n' \
+            "${{ steps.src.outputs.sha }}" "$BUILD_REF" "$llvm_version" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            > dist/llvm-dev-manifest.json
+          cat dist/llvm-dev-manifest.json
+
+      - name: upload the llvm-dev package
+        uses: actions/upload-artifact@v4
+        with:
+          name: llvm-dev
+          path: dist/
+          if-no-files-found: error
+
+  wamrc:
+    needs: llvm
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      MODE: ${{ inputs.mode }}
+      MLLVM: ${{ inputs.mllvm }}
+      LLVM_SHA: ${{ needs.llvm.outputs.sha }}
+    steps:
+      - name: checkout drivers (module sources, in-tree)
+        uses: actions/checkout@v4
+
+      - name: deps
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ninja-build zstd
+
+      - name: fetch the llvm-dev package (run artifact, sha-pinned)
+        uses: actions/download-artifact@v4
+        with:
+          name: llvm-dev
+          path: llvm-dev-dist/
+
+      - name: unpack + verify
+        run: |
+          set -eux
+          s8="${LLVM_SHA:0:8}"
+          asset="llvm-dev-dist/llvm-xtensa-dev-$s8-linux-x64.tar.zst"
+          ( cd llvm-dev-dist && sha256sum -c llvm-dev.sha256 )
+          mkdir -p llvm-dev && tar --zstd -xf "$asset" -C llvm-dev
+          test -d llvm-dev/lib/cmake/llvm
+          cat llvm-dev-dist/llvm-dev-manifest.json
+
+      - name: fetch WAMR (esp fork = board runtime source)
+        env:
+          WAMR_SHA: ${{ inputs.wamr_sha }}
+        run: |
+          set -eux
+          git init -q wamr
+          git -C wamr remote add origin https://github.com/espressif/wasm-micro-runtime.git
+          git -C wamr fetch --depth 1 origin "$WAMR_SHA"
+          git -C wamr checkout FETCH_HEAD
+          git -C wamr log -1 --format='WAMR at %H %ci %s'
+
+      - name: instrument wamrc to dump the real object file
+        run: |
+          set -eux
+          python3 - <<'EOF'
+          from pathlib import Path
+          p = Path("wamr/core/iwasm/compilation/aot_emit_aot_file.c")
+          src = p.read_text()
+          anchor = "    if (!(obj_data->binary = LLVMCreateBinary(obj_data->mem_buf, NULL, &err))) {"
+          assert src.count(anchor) == 1, "anchor not found"
+          dump_lines = [
+              '    /* xuansi CI instrumentation: dump the emitted object file so the',
+              '       ELF-level assertions run on the real bytes wamrc produced. */',
+              '    {',
+              '        const char *xuansi_obj_path = getenv("XUANSI_DUMP_OBJ");',
+              '        if (xuansi_obj_path != NULL) {',
+              '            FILE *xuansi_f = fopen(xuansi_obj_path, "wb");',
+              '            if (xuansi_f != NULL) {',
+              '                const char *xuansi_start = LLVMGetBufferStart(obj_data->mem_buf);',
+              '                size_t xuansi_size = LLVMGetBufferSize(obj_data->mem_buf);',
+              '                fwrite(xuansi_start, 1, xuansi_size, xuansi_f);',
+              '                fclose(xuansi_f);',
+              '                printf("xuansi: dumped object file to %s (%zu bytes)\\n",',
+              '                       xuansi_obj_path, xuansi_size);',
+              '            } else {',
+              '                printf("xuansi: cannot open XUANSI_DUMP_OBJ=%s\\n", xuansi_obj_path);',
+              '            }',
+              '        }',
+              '    }',
+              '',
+          ]
+          dump = "\n".join(dump_lines)
+          p.write_text(src.replace(anchor, dump + anchor, 1))
+          print("instrumentation applied")
+          EOF
+
+      - name: build wamr-compiler (CUSTOM_LLVM, minutes)
+        run: |
+          set -eux
+          cmake -G Ninja -S wamr/wamr-compiler -B wamr/wamr-compiler/build \
+            -DCMAKE_BUILD_TYPE= \
+            -DCMAKE_CXX_FLAGS="-include cstdint" \
+            -DWAMR_BUILD_WITH_CUSTOM_LLVM=1 \
+            -DLLVM_DIR="$GITHUB_WORKSPACE/llvm-dev/lib/cmake/llvm"
+          ninja -C wamr/wamr-compiler/build
+          cp wamr/wamr-compiler/build/wamrc wamrc-t9
+          ./wamrc-t9 --version
+          targets="$(./wamrc-t9 --target=help 2>&1 || true)"
+          echo "$targets" | grep -q "xtensa" || { echo "wamrc-t9 lacks the xtensa backend" >&2; exit 1; }
+          echo "xtensa backend: OK"
+
+      - name: fetch xtensa binutils (objdump for disassembly evidence)
+        run: |
+          set -eux
+          curl -fsSL -o ctng.tar.xz \
+            "https://github.com/espressif/crosstool-NG/releases/download/esp-16.1.0_20260609/xtensa-esp-elf-16.1.0_20260609-x86_64-linux-gnu.tar.xz"
+          mkdir -p ctng && tar -xJf ctng.tar.xz -C ctng
+          OD="$(find "$PWD/ctng" -name xtensa-esp-elf-objdump | head -1)"
+          test -x "$OD"
+          echo "OBJDUMP=$OD" >> "$GITHUB_ENV"
+          "$OD" --version | head -1
+
+      - name: compile the five modules (drivers build.sh flags)
+        run: |
+          set -eux
+          mkdir -p t9out
+          declare -A WASMS=(
+            [hello]=modules/hello/1.0.0/hello.wasm
+            [gc2145]=modules/gc2145/1.0.0/gc2145.wasm
+            [ledwatch]=modules/ledwatch/2.0.0/ledwatch.wasm
+            [st7789]=modules/st7789/1.0.0/st7789.wasm
+            [jpge]=modules/jpge/1.0.0/jpge.wasm
+          )
+          MLLVM_ARGS=""
+          if [ -n "$MLLVM" ]; then MLLVM_ARGS="--mllvm=$MLLVM"; fi
+          for m in hello gc2145 ledwatch st7789 jpge; do
+            XUANSI_DUMP_OBJ="$PWD/t9out/$m.o" \
+              ./wamrc-t9 --target=xtensa --cpu=esp32s3 --size-level=3 $MLLVM_ARGS \
+              -o "t9out/$m.aot" "${WASMS[$m]}"
+            test -s "t9out/$m.o" && test -s "t9out/$m.aot"
+          done
+          ls -la t9out/
+          sha256sum t9out/*.aot t9out/*.o | tee t9out/sha256.txt
+
+      - name: ELF/object-level assertions + disassembly census
+        run: |
+          set -eux
+          python3 - <<'EOF'
+          import os, re, subprocess, sys, json
+          mode = os.environ.get("MODE", "surgery")
+          od = os.environ["OBJDUMP"]
+          mods = ["hello", "gc2145", "ledwatch", "st7789", "jpge"]
+          # committed stock baseline (drivers main, 18.1.2 pipeline; parsed
+          # from the shipped .aot containers - task evidence
+          # 2026-11-10-p3-t9-stock-baseline.txt)
+          stock = {
+            "hello":    dict(text=6712,  lit=500,  slot0=191, r32=46),
+            "gc2145":   dict(text=8968,  lit=456,  slot0=158, r32=18),
+            "ledwatch": dict(text=11264, lit=244,  slot0=153, r32=9),
+            "st7789":   dict(text=20684, lit=1244, slot0=452, r32=52),
+            "jpge":     dict(text=75976, lit=1708, slot0=715, r32=139),
+          }
+          def sh(*a):
+            return subprocess.run(a, capture_output=True, text=True, check=True).stdout
+          def section_info(readelf_out, name):
+              # " [Nr] Name Type Address Off Size ES Flg Lk Inf Al"
+              for line in readelf_out.splitlines():
+                  m = re.match(r"\s*\[\s*\d+\]\s+(\S+)\s+(\S+)\s+([0-9a-f]+)\s+([0-9a-f]+)\s+([0-9a-f]+)\s+(\S+)\s+(\S+)?", line)
+                  if m and m.group(1) == name:
+                      return dict(size=int(m.group(5), 16), flags=m.group(7) or "")
+              return None
+          failures = []
+          table = []
+          for m in mods:
+              o = f"t9out/{m}.o"
+              secs = sh("readelf", "-SW", o)
+              lit = section_info(secs, ".literal")
+              txt = section_info(secs, ".text")
+              rel = sh("readelf", "-rW", o)
+              slot0 = len(re.findall(r"R_XTENSA_SLOT0_OP\b", rel))
+              r32 = len(re.findall(r"R_XTENSA_32\b", rel))
+              dis = sh(od, "-d", o)
+              total = len(re.findall(r"^\s*[0-9a-f]+:", dis, re.M))
+              l32r = len(re.findall(r"\bl32r\b", dis))
+              l32i = len(re.findall(r"\bl32i(?:\.n)?\b", dis))
+              addmi = len(re.findall(r"\baddmi\b", dis))
+              # literal base chain: l32i aX, a2, 8 ... l32i aX, aX, 64
+              chain = re.findall(r"l32i\s+(a\d+),\s*a2,\s*8[\s\S]{0,120}?l32i\s+\1,\s*\1,\s*64", dis)
+              row = dict(mod=m, lit_flags=lit["flags"] if lit else None,
+                         lit_size=lit["size"] if lit else 0,
+                         text=txt["size"] if txt else 0,
+                         slot0=slot0, r32=r32, l32r=l32r, l32i=l32i,
+                         addmi=addmi, chain=len(chain), insns=total,
+                         stock=stock[m])
+              table.append(row)
+              print(f"{m:9} flags={row['lit_flags']!s:4} lit={row['lit_size']:5} "
+                    f"text={row['text']:6} slot0={slot0:4} r32={r32:4} l32r={l32r:4} "
+                    f"l32i={l32i:5} addmi={addmi:3} chain={len(chain):3} insns={total:6} "
+                    f"(stock slot0={stock[m]['slot0']} lit={stock[m]['lit']} text={stock[m]['text']})")
+              if mode != "surgery":
+                  continue
+              if not lit:
+                  failures.append(f"{m}: no .literal section")
+              else:
+                  if "A" not in lit["flags"]:
+                      failures.append(f"{m}: .literal missing ALLOC ({lit['flags']})")
+                  if "X" in lit["flags"]:
+                      failures.append(f"{m}: .literal still EXECINSTR ({lit['flags']})")
+              if slot0 != 0:
+                  failures.append(f"{m}: R_XTENSA_SLOT0_OP == {slot0} (want 0)")
+              if l32r != 0:
+                  failures.append(f"{m}: {l32r} l32r instructions remain")
+              if len(chain) < 1:
+                  failures.append(f"{m}: literal base chain (l32i a?,a2,8 / l32i a?,a?,64) not found")
+          print()
+          if mode == "surgery":
+              if failures:
+                  for f in failures:
+                      print("FAIL " + f)
+                  sys.exit(1)
+              print("ALL FOUR GATES PASS x 5 MODULES")
+          with open("t9out/t9-table.json", "w") as fh:
+              json.dump(table, fh, indent=1)
+          EOF
+
+      - name: save disassembly + section evidence
+        run: |
+          set -eux
+          for m in hello gc2145 ledwatch st7789 jpge; do
+            "$OBJDUMP" -d "t9out/$m.o" > "t9out/$m.disasm.txt"
+            readelf -SW "t9out/$m.o" > "t9out/$m.sections.txt"
+            readelf -rW "t9out/$m.o" > "t9out/$m.relocs.txt"
+          done
+          echo '--- prologue chain excerpts (hello) ---'
+          grep -nE -m4 -B2 -A6 "l32i +a[0-9]+, a2, 8" t9out/hello.disasm.txt || true
+
+      - name: upload evidence artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: t9-evidence
+          path: |
+            t9out/
+            llvm-dev-dist/llvm-dev-manifest.json
+            wamrc-t9
+          if-no-files-found: error
