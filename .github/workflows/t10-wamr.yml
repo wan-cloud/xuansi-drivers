@@ -391,8 +391,14 @@ jobs:
                       if got and got[0] == "xuansi.literal":
                           pool = True
               groups, types = relocation_census(buf)
-              # customs are legal only AFTER the relocation section
-              stock_ok_order = all(t == 100 for t in order[order.index(5)+1:]) if 5 in order else False
+              # stock shape = numbered sections strictly ascending with
+              # CUSTOMs only in the tail (strip trailing 100s, remainder
+              # must be exactly 0,1,2,...) — catches a custom planted
+              # anywhere before the relocation section too
+              core = list(order)
+              while core and core[-1] == 100:
+                  core.pop()
+              stock_ok_order = (core == list(range(len(core))) and 5 in core)
               row = dict(mod=m, kind="stock", literal_size=lit_sz,
                          pool_section=pool, order_stock_shape=stock_ok_order,
                          slot0=types.get(20, 0), r32=types.get(1, 0),
