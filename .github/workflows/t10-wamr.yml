@@ -1,0 +1,456 @@
+name: t10-wamr
+
+# P3 Task 10 (WAMR fork surgery: emit split + loader dual path, spec
+# 5.3.2/5.3.3).  Sister of t9-llvm.yml: that workflow proves the LLVM
+# codegen at the object level; this one builds wamrc from the WAN-CLOUD
+# WAMR FORK (xuansi/base-2.4.0 + the P3-T10 commits) so the emit-side
+# surgery is in the toolchain, and proves the CONTAINERS plus the host
+# loader contracts:
+#
+#   job llvm  : same recipe/cache-key namespace as t9-llvm (the LLVM
+#               source moves with the slot constant, so its sha keys
+#               the cache) — plus the FIRST-STEP CONSTANT GATE: the
+#               LLVM-side XtensaSubtarget.h constants and the WAMR-side
+#               xuansi_aot.h constants must be equal (T9-designed
+#               backstop; mismatch = red before any build).
+#   job t10   : fork wamrc build; five modules compiled surgery (the
+#               xtensa default) and stock (--disable-xuansi-surgery);
+#               container-level gates x5 (surgery): text literal_size
+#               == 0, xuansi.literal CUSTOM section present BEFORE the
+#               RELOCATION section (old-runtime honest refusal) and
+#               sized to the .o .literal, zero R_XTENSA_SLOT0_OP in the
+#               container relocation section; stock leg x5 (regression):
+#               literal_size > 0, no pool section, stock section order,
+#               SLOT0_OP counts > 0.  Then the host unit tests
+#               (tests/xuansi in the fork): classifier vectors,
+#               MALFORMED api-rejects, surgery load/place/slot-fill/call
+#               on host containers.
+
+on:
+  workflow_dispatch:
+    inputs:
+      llvm_ref:
+        description: "wan-cloud/llvm-project ref to build (branch or sha)"
+        required: true
+        default: "xuansi/a3-surgery"
+      wamr_ref:
+        description: "wan-cloud/wasm-micro-runtime ref to build wamrc from (the fork)"
+        required: true
+        default: "xuansi/base-2.4.0"
+      mode:
+        description: "surgery = assert the gates; record = dump only"
+        required: true
+        default: "surgery"
+
+permissions:
+  contents: read
+
+jobs:
+  llvm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    outputs:
+      sha: ${{ steps.src.outputs.sha }}
+    env:
+      BUILD_REF: ${{ inputs.llvm_ref }}
+      WAMR_REF: ${{ inputs.wamr_ref }}
+    steps:
+      - name: fetch the llvm-project fork at the requested ref
+        run: |
+          set -eux
+          git init -q llvm-project
+          git -C llvm-project remote add origin https://github.com/wan-cloud/llvm-project.git
+          git -C llvm-project fetch --depth 1 origin "$BUILD_REF"
+          git -C llvm-project checkout FETCH_HEAD
+          git -C llvm-project log -1 --format='llvm at %H %ci %s'
+
+      - name: fetch the WAMR fork (constant mirror + wamrc source)
+        run: |
+          set -eux
+          git init -q wamr
+          git -C wamr remote add origin https://github.com/wan-cloud/wasm-micro-runtime.git
+          git -C wamr fetch --depth 1 origin "$WAMR_REF"
+          git -C wamr checkout FETCH_HEAD
+          git -C wamr log -1 --format='wamr at %H %ci %s'
+
+      # T9-designed backstop, made the FIRST step of the loop: the slot
+      # constants live physically in both repos (LLVM single source,
+      # WAMR mirror).  Any drift is a hard red before a 40-minute build.
+      - name: constant gate (both repos must agree)
+        run: |
+          set -eux
+          llvm_hdr="llvm-project/llvm/lib/Target/Xtensa/XtensaSubtarget.h"
+          wamr_hdr="wamr/core/iwasm/aot/xuansi_aot.h"
+          test -f "$llvm_hdr" && test -f "$wamr_hdr"
+          llvm_slot="$(grep -oP 'XUANSI_LITERAL_BASE_SLOT\s*=\s*\K[0-9]+' "$llvm_hdr")"
+          llvm_exec="$(grep -oP 'XUANSI_EXEC_ENV_MODULE_INST_OFFSET\s*=\s*\K[0-9]+' "$llvm_hdr")"
+          wamr_slot="$(grep -oP '#define XUANSI_LITERAL_BASE_SLOT\s+\K[0-9]+' "$wamr_hdr")"
+          wamr_exec="$(grep -oP '#define XUANSI_EXEC_ENV_MODULE_INST_OFFSET\s+\K[0-9]+' "$wamr_hdr")"
+          echo "llvm: slot=$llvm_slot exec_env=$llvm_exec"
+          echo "wamr: slot=$wamr_slot exec_env=$wamr_exec"
+          test -n "$llvm_slot" && test -n "$wamr_slot"
+          test -n "$llvm_exec" && test -n "$wamr_exec"
+          test "$llvm_slot" = "$wamr_slot"
+          test "$llvm_exec" = "$wamr_exec"
+          echo "CONSTANT GATE PASS (slot=$llvm_slot exec_env=$llvm_exec)"
+
+      - name: source sha
+        id: src
+        run: |
+          sha="$(git -C llvm-project rev-parse HEAD)"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "ref8=${sha:0:8}" >> "$GITHUB_OUTPUT"
+
+      - name: restore the LLVM build tree (keyed on the source sha)
+        id: llvm-cache
+        uses: actions/cache@v4
+        with:
+          path: llvm-project/build
+          key: t9-llvm-build-${{ steps.src.outputs.sha }}-notools-linux-x64
+
+      # A cache hit restores the BUILD tree, but the source fetch above
+      # wrote every source file with a fresh mtime, which would make
+      # every ninja target look dirty again. Backdate all source files so
+      # the restored build outputs stay newer than their inputs.
+      - name: backdate sources after a cache hit (keep outputs to date)
+        if: steps.llvm-cache.outputs.cache-hit == 'true'
+        run: find llvm-project -path llvm-project/build -prune -o -type f -exec touch -d '2020-01-01' {} +
+
+      - name: deps
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ninja-build ccache zstd
+
+      - name: configure + build LLVM (only on cache miss)
+        if: steps.llvm-cache.outputs.cache-hit != 'true'
+        run: |
+          set -eux
+          cmake -G Ninja -S llvm-project/llvm -B llvm-project/build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$PWD/llvm-pkg" \
+            -DLLVM_TARGETS_TO_BUILD="AArch64;ARM;Mips;RISCV;X86" \
+            -DLLVM_EXPERIMENTAL_TARGETS_TO_BUILD=Xtensa \
+            -DLLVM_BUILD_TOOLS=OFF \
+            -DLLVM_TOOL_LTO_BUILD=OFF \
+            -DLLVM_TOOL_REMARKS_SHLIB_BUILD=OFF \
+            -DCMAKE_CXX_FLAGS="-include cstdint" \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          ninja -C llvm-project/build
+
+      - name: build llvm-config (tool; cheap)
+        run: ninja -C llvm-project/build llvm-config
+
+      - name: save the LLVM build tree
+        if: steps.llvm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: llvm-project/build
+          key: t9-llvm-build-${{ steps.src.outputs.sha }}-notools-linux-x64
+
+      - name: install LLVM into the package tree + completeness gate
+        run: |
+          set -eux
+          test -f llvm-project/build/build.ninja
+          ninja -C llvm-project/build install
+          test -d llvm-pkg/lib/cmake/llvm
+          ls llvm-pkg/lib/libLLVM*.a >/dev/null
+          test -x llvm-pkg/bin/llvm-tblgen
+          cp llvm-project/build/bin/llvm-config llvm-pkg/bin/llvm-config
+          llvm_version="$(llvm-pkg/bin/llvm-config --version)"
+          python3 - <<'EOF'
+          import re, sys
+          from pathlib import Path
+          prefix = Path("llvm-pkg")
+          refs = set()
+          for f in (prefix / "lib/cmake/llvm").glob("LLVMExports*.cmake"):
+              refs |= set(re.findall(r'\$\{_IMPORT_PREFIX\}/(\S+?)(?=["\s])', f.read_text()))
+          missing = sorted(r for r in refs if not (prefix / r).exists())
+          if missing:
+              sys.exit(f"exports reference files missing from the package: {missing}")
+          print(f"exports completeness: OK ({len(refs)} referenced files present)")
+          EOF
+          mkdir -p dist
+          asset="dist/llvm-xtensa-dev-${{ steps.src.outputs.ref8 }}-linux-x64.tar.zst"
+          ( cd llvm-pkg && tar --zstd -cf "../$asset" \
+              bin/llvm-config* bin/llvm-tblgen lib/libLLVM*.a \
+              lib/cmake/llvm include/llvm include/llvm-c )
+          ( cd dist && sha256sum "$(basename "$asset")" > llvm-dev.sha256 )
+          printf '{\n "source_sha": "%s",\n "built_from_ref": "%s",\n "llvm_version": "%s",\n "built": "%s"\n}\n' \
+            "${{ steps.src.outputs.sha }}" "$BUILD_REF" "$llvm_version" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            > dist/llvm-dev-manifest.json
+          cat dist/llvm-dev-manifest.json
+
+      - name: upload the llvm-dev package
+        uses: actions/upload-artifact@v4
+        with:
+          name: llvm-dev
+          path: dist/
+          if-no-files-found: error
+
+  t10:
+    needs: llvm
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      MODE: ${{ inputs.mode }}
+      LLVM_SHA: ${{ needs.llvm.outputs.sha }}
+    steps:
+      - name: checkout drivers (module sources, in-tree)
+        uses: actions/checkout@v4
+
+      - name: deps
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ninja-build zstd
+
+      - name: fetch the llvm-dev package (run artifact, sha-pinned)
+        uses: actions/download-artifact@v4
+        with:
+          name: llvm-dev
+          path: llvm-dev-dist/
+
+      - name: unpack + verify
+        run: |
+          set -eux
+          s8="${LLVM_SHA:0:8}"
+          asset="llvm-dev-dist/llvm-xtensa-dev-$s8-linux-x64.tar.zst"
+          ( cd llvm-dev-dist && sha256sum -c llvm-dev.sha256 )
+          mkdir -p llvm-dev && tar --zstd -xf "$asset" -C llvm-dev
+          test -d llvm-dev/lib/cmake/llvm
+          cat llvm-dev-dist/llvm-dev-manifest.json
+
+      - name: fetch the WAMR fork (wamrc source + tests)
+        env:
+          WAMR_REF: ${{ inputs.wamr_ref }}
+        run: |
+          set -eux
+          git init -q wamr
+          git -C wamr remote add origin https://github.com/wan-cloud/wasm-micro-runtime.git
+          git -C wamr fetch --depth 1 origin "$WAMR_REF"
+          git -C wamr checkout FETCH_HEAD
+          git -C wamr log -1 --format='wamr at %H %ci %s'
+
+      - name: build wamrc from the FORK (CUSTOM_LLVM, minutes)
+        run: |
+          set -eux
+          cmake -G Ninja -S wamr/wamr-compiler -B wamr/wamr-compiler/build \
+            -DCMAKE_BUILD_TYPE= \
+            -DCMAKE_CXX_FLAGS="-include cstdint" \
+            -DWAMR_BUILD_WITH_CUSTOM_LLVM=1 \
+            -DLLVM_DIR="$GITHUB_WORKSPACE/llvm-dev/lib/cmake/llvm"
+          ninja -C wamr/wamr-compiler/build
+          cp wamr/wamr-compiler/build/wamrc wamrc-t10
+          ./wamrc-t10 --version
+
+      - name: compile the five modules, surgery and stock legs
+        run: |
+          set -eux
+          mkdir -p t10out
+          declare -A WASMS=(
+            [hello]=modules/hello/1.0.0/hello.wasm
+            [gc2145]=modules/gc2145/1.0.0/gc2145.wasm
+            [ledwatch]=modules/ledwatch/2.0.0/ledwatch.wasm
+            [st7789]=modules/st7789/1.0.0/st7789.wasm
+            [jpge]=modules/jpge/1.0.0/jpge.wasm
+          )
+          for m in hello gc2145 ledwatch st7789 jpge; do
+            # surgery is the xtensa default on this fork wamrc; assert the
+            # banner so a silent default flip cannot pass unnoticed
+            ./wamrc-t10 --target=xtensa --cpu=esp32s3 --size-level=3 \
+              -o "t10out/$m.aot" "${WASMS[$m]}" 2>&1 | tee "t10out/$m.surgery.log"
+            grep -q "xuansi surgery mode: ON" "t10out/$m.surgery.log"
+            ./wamrc-t10 --target=xtensa --cpu=esp32s3 --size-level=3 \
+              --disable-xuansi-surgery \
+              -o "t10out/$m.stock.aot" "${WASMS[$m]}" 2>&1 | tee "t10out/$m.stock.log"
+            grep -q "xuansi surgery mode: OFF" "t10out/$m.stock.log"
+            test -s "t10out/$m.aot" && test -s "t10out/$m.stock.aot"
+          done
+          sha256sum t10out/*.aot | tee t10out/sha256.txt
+
+      - name: container-level gates (x5 surgery + x5 stock)
+        run: |
+          set -eux
+          python3 - <<'EOF'
+          import os, struct, sys, json
+          mode = os.environ.get("MODE", "surgery")
+          mods = ["hello", "gc2145", "ledwatch", "st7789", "jpge"]
+          AOT_MAGIC = 0x746F6100
+
+          def sections(buf):
+              """walk (type, size, body_offset); 4-aligned like the stock reader"""
+              assert struct.unpack("<I", buf[0:4])[0] == AOT_MAGIC
+              assert struct.unpack("<I", buf[4:8])[0] in (3, 4)
+              p, out = 8, []
+              while p + 8 <= len(buf):
+                  p = (p + 3) & ~3
+                  if p + 8 > len(buf):
+                      break
+                  t, s = struct.unpack("<II", buf[p:p+8])
+                  out.append((t, s, p + 8))
+                  p += 8 + s
+              return out
+
+          def custom_raw(buf, body, size):
+              """CUSTOM RAW section -> (name, content_off) or None"""
+              if size < 6:
+                  return None
+              sub = struct.unpack("<I", buf[body:body+4])[0]
+              if sub != 0:  # AOT_CUSTOM_SECTION_RAW
+                  return None
+              nl = struct.unpack("<H", buf[body+4:body+6])[0]
+              name = buf[body+6:body+6+nl]
+              q = (body + 6 + nl + 3) & ~3
+              return (name[:-1].decode(errors="replace"), q)
+
+          def relocation_census(buf):
+              """parse the RELOCATION section of an xtensa (elf32) container:
+              group names + reloc type counts"""
+              bin_type = None
+              for t, s, body in sections(buf):
+                  if t == 0:
+                      bin_type = struct.unpack("<H", buf[body:body+2])[0]
+                  if t != 5:
+                      continue
+                  assert bin_type in (0, 1), f"not an elf32 container ({bin_type})"
+                  p = body
+                  sym_count = struct.unpack("<I", buf[p:p+4])[0]; p += 4
+                  offs = [struct.unpack("<I", buf[p+4*i:p+4*i+4])[0] for i in range(sym_count)]
+                  p += 4 * sym_count
+                  str_len = struct.unpack("<I", buf[p:p+4])[0]; p += 4
+                  str_base = p
+                  names = []
+                  for o in offs:
+                      nl = struct.unpack("<H", buf[str_base+o:str_base+o+2])[0]
+                      names.append(buf[str_base+o+2:str_base+o+2+nl-1].decode(errors="replace"))
+                  p = (str_base + str_len + 3) & ~3
+                  group_count = struct.unpack("<I", buf[p:p+4])[0]; p += 4
+                  groups, types = {}, {}
+                  for _ in range(group_count):
+                      p = (p + 3) & ~3
+                      ni = struct.unpack("<I", buf[p:p+4])[0]; p += 4
+                      rc = struct.unpack("<I", buf[p:p+4])[0]; p += 4
+                      gname = names[ni] if ni < len(names) else "?"
+                      for _ in range(rc):
+                          p = (p + 3) & ~3
+                          off, addend, rtype, sidx = struct.unpack("<IIII", buf[p:p+16])
+                          p += 16
+                          groups[gname] = groups.get(gname, 0) + 1
+                          types[rtype] = types.get(rtype, 0) + 1
+                  return groups, types
+              return {}, {}
+
+          failures, table = [], []
+          for m in mods:
+              # ---------- surgery container ----------
+              buf = open(f"t10out/{m}.aot", "rb").read()
+              order = [t for t, _, _ in sections(buf)]
+              lit_sz = None
+              pool_bytes = None
+              pool_before_reloc = False
+              seen_reloc = False
+              for t, s, body in sections(buf):
+                  if t == 2:  # TEXT
+                      lit_sz = struct.unpack("<I", buf[body:body+4])[0]
+                  elif t == 5:
+                      seen_reloc = True
+                  elif t == 100:  # CUSTOM
+                      got = custom_raw(buf, body, s)
+                      if got and got[0] == "xuansi.literal":
+                          pool_bytes = s - (got[1] - body)
+                          pool_before_reloc = not seen_reloc
+              groups, types = relocation_census(buf)
+              row = dict(mod=m, kind="surgery", literal_size=lit_sz,
+                         pool_bytes=pool_bytes,
+                         pool_before_reloc=pool_before_reloc,
+                         slot0=types.get(20, 0), r32=types.get(1, 0),
+                         literal_group=groups.get(".rela.literal", 0),
+                         order=order)
+              table.append(row)
+              if mode == "surgery":
+                  if lit_sz != 0:
+                      failures.append(f"{m}: surgery literal_size == {lit_sz} (want 0)")
+                  if pool_bytes is None:
+                      failures.append(f"{m}: no xuansi.literal section")
+                  if not pool_before_reloc:
+                      failures.append(f"{m}: xuansi.literal not before RELOCATION "
+                                      "(old-runtime honest refusal broken)")
+
+              # ---------- stock container (regression) ----------
+              buf = open(f"t10out/{m}.stock.aot", "rb").read()
+              secs = sections(buf)
+              order = [t for t, _, _ in secs]
+              lit_sz = None
+              pool = False
+              seen_reloc = False
+              for t, s, body in secs:
+                  if t == 2:
+                      lit_sz = struct.unpack("<I", buf[body:body+4])[0]
+                  elif t == 5:
+                      seen_reloc = True
+                  elif t == 100 and seen_reloc:
+                      got = custom_raw(buf, body, s)
+                      if got and got[0] == "xuansi.literal":
+                          pool = True
+              groups, types = relocation_census(buf)
+              stock_ok_order = all(t == 100 for t in order[order.index(5):]) if 5 in order else False
+              row = dict(mod=m, kind="stock", literal_size=lit_sz,
+                         pool_section=pool, order_stock_shape=stock_ok_order,
+                         slot0=types.get(20, 0), r32=types.get(1, 0),
+                         literal_group=groups.get(".rela.literal", 0))
+              table.append(row)
+              if mode == "surgery":
+                  if not (lit_sz and lit_sz > 0):
+                      failures.append(f"{m}: stock literal_size == {lit_sz} (want > 0)")
+                  if pool:
+                      failures.append(f"{m}: stock container carries a pool section")
+                  if not stock_ok_order:
+                      failures.append(f"{m}: stock section order changed {order}")
+                  if types.get(20, 0) == 0:
+                      failures.append(f"{m}: stock SLOT0_OP == 0 (stock codegen must keep l32r)")
+
+          for r in table:
+              print(json.dumps(r))
+          if mode == "surgery":
+              if failures:
+                  for f in failures:
+                      print("FAIL " + f)
+                  sys.exit(1)
+              print("CONTAINER GATES PASS x 5 MODULES x 2 LEGS")
+          with open("t10out/t10-table.json", "w") as fh:
+              json.dump(table, fh, indent=1)
+          EOF
+
+      - name: host unit tests (classifier + dual-path + slot fill)
+        run: |
+          set -eux
+          cmake -G Ninja -S wamr/tests/xuansi -B wamr/tests/xuansi/build
+          ninja -C wamr/tests/xuansi/build
+          # host stock + surgery fixtures from the fork wamrc, plus the
+          # five xtensa products as classify-only legs
+          ./wamrc-t10 -o t10out/stock_host.aot wamr/tests/xuansi/mini.wasm
+          ./wamrc-t10 --enable-xuansi-surgery -o t10out/surgery_host.aot wamr/tests/xuansi/mini.wasm
+          ARGS="t10out/stock_host.aot t10out/surgery_host.aot"
+          for m in hello gc2145 ledwatch st7789 jpge; do
+            ARGS="$ARGS t10out/$m.stock.aot t10out/$m.aot"
+          done
+          # (xtensa products classify STOCK / SURGERY; the loader rejects
+          # the foreign arch honestly - the classify-only legs cover them)
+          wamr/tests/xuansi/build/xuansi_aot_tests t10out/stock_host.aot \
+            t10out/surgery_host.aot t10out/hello.stock.aot t10out/hello.aot
+
+      - name: host iwasm end-to-end (surgery + stock containers run)
+        run: |
+          set -eux
+          cmake -G Ninja -S wamr/product-mini/platforms/linux -B wamr/product-mini/platforms/linux/build \
+            -DCMAKE_BUILD_TYPE=Release -DWAMR_BUILD_AOT=1
+          ninja -C wamr/product-mini/platforms/linux/build
+          IWASM=wamr/product-mini/platforms/linux/build/iwasm
+          test "$($IWASM -f f t10out/stock_host.aot)" = "0x4d:i32"
+          test "$($IWASM -f f t10out/surgery_host.aot)" = "0x4d:i32"
+          echo "host iwasm E2E: both shapes run f() == 77"
+
+      - name: upload evidence artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: t10-evidence
+          path: |
+            t10out/
+            llvm-dev-dist/llvm-dev-manifest.json
+            wamrc-t10
+          if-no-files-found: error

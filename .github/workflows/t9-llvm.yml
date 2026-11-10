@@ -40,7 +40,7 @@ on:
         required: true
         default: "surgery"
       mllvm:
-        description: "extra --mllvm flags for wamrc (e.g. xuansi-literal-base=0 for A/B)"
+        description: "extra --mllvm flags for wamrc (e.g. -xuansi-literal-base=0 for A/B; the leading '-' is required by LLVM cl and prepended if missing)"
         required: false
         default: ""
 
@@ -272,8 +272,16 @@ jobs:
             [st7789]=modules/st7789/1.0.0/st7789.wasm
             [jpge]=modules/jpge/1.0.0/jpge.wasm
           )
+          # P3-T9 Important rider (fixed in T10): LLVM cl options need
+          # their leading '-' (a bare name=value is silently ignored);
+          # prepend it if missing so an A/B leg can never run a no-op.
           MLLVM_ARGS=""
-          if [ -n "$MLLVM" ]; then MLLVM_ARGS="--mllvm=$MLLVM"; fi
+          if [ -n "$MLLVM" ]; then
+            case "$MLLVM" in
+              -*) MLLVM_ARGS="--mllvm=$MLLVM" ;;
+              *)  MLLVM_ARGS="--mllvm=-$MLLVM"; echo "note: prepended '-' to mllvm input" ;;
+            esac
+          fi
           for m in hello gc2145 ledwatch st7789 jpge; do
             XUANSI_DUMP_OBJ="$PWD/t9out/$m.o" \
               ./wamrc-t9 --target=xtensa --cpu=esp32s3 --size-level=3 $MLLVM_ARGS \
