@@ -422,13 +422,9 @@ jobs:
           cmake -G Ninja -S wamr/tests/xuansi -B wamr/tests/xuansi/build
           ninja -C wamr/tests/xuansi/build
           # host stock + surgery fixtures from the fork wamrc, plus the
-          # five xtensa products as classify-only legs
+          # xtensa products as classify-only legs
           ./wamrc-t10 -o t10out/stock_host.aot wamr/tests/xuansi/mini.wasm
           ./wamrc-t10 --enable-xuansi-surgery -o t10out/surgery_host.aot wamr/tests/xuansi/mini.wasm
-          ARGS="t10out/stock_host.aot t10out/surgery_host.aot"
-          for m in hello gc2145 ledwatch st7789 jpge; do
-            ARGS="$ARGS t10out/$m.stock.aot t10out/$m.aot"
-          done
           # (xtensa products classify STOCK / SURGERY; the loader rejects
           # the foreign arch honestly - the classify-only legs cover them)
           wamr/tests/xuansi/build/xuansi_aot_tests t10out/stock_host.aot \
