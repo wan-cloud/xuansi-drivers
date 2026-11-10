@@ -410,8 +410,8 @@ call chains `bench.wasm.load` (gc2145, jpge) → `gc2145.init` →
   daemon's reply wait derives from the effective budget (budget + 2s,
   under its 60s per-request ceiling). Honest limit: it does not
   exempt a single long module call from the VM-task watchdog (> 5s
-  one-call still trips) — which is exactly why the interp window
-  below pins QVGA.
+  one-call still trips) — which is exactly why the interpreter lane
+  pins QVGA (note below).
 - **`frames`** — the reply carries `frames:[{ch, name, data_b64}]`:
   the stream frames that arrived on the connection during the call,
   any channel, `name` the host-stamped module name (a jpge `shot`
@@ -430,17 +430,20 @@ idempotent. The documented F-3 exception still holds — the SCCB i2c
 claim on pins 4/5 persists across `off()` and clears on session reset
 (see "gc2145" above).
 
-**The interp transition window pins QVGA** (until the AOT track — P3 —
-lands): the recipe is written at its target shape (VGA, in-module
-encode), but on today's interpreter a VGA `shot` is a single ~15s+
-encode that WILL trip the 5s VM-task watchdog (measured on the board —
-task-wdt panic, self-healed; the interp tax is 30-50× over native).
-QVGA is the interp-window framesize on two hard legs of evidence: a
-q60 encode measured ~3s on scene frames (~3.9s on noisy ones — green
-even against the 4s session-budget ceiling), and the VGA watchdog trip
-above. Pass `framesize:"QVGA"` and keep quality in the measured-safe
-class (q ≤ 60 — the block's `quality:80` is the AOT-era value) until
-P3 lands; going back to VGA then is a one-token recipe change.
+**VGA is the measured recipe shape** (P3 AOT landed, measured
+2026-11-11): on the surgery-`.aot` lane — what the paired push loads —
+the in-module VGA encode measured **1229ms median at q80 / 1179ms at
+q60** (n=3 each, same-scene board run against the canonical
+toolchain-v3 `jpge.aot`), comfortably inside the recipe's 4s budget.
+The recipe block above therefore pins `framesize:"VGA"` at its
+published value. The interpreter lane (`.wasm` — older firmware, or an
+explicit single-artifact push) remains honestly QVGA-class: interp
+encodes measured ~3.1s at QVGA q60/q80 on the same scene and same run
+(~10× the AOT lane per cell), and a single interp VGA encode still
+trips the 5s VM-task watchdog — re-confirmed on that same run
+(no-reply + reboot; the board self-heals). On the `.wasm` lane pass
+`framesize:"QVGA"`; on the default paired push, VGA is the shape to
+use.
 
 **Co-load budgets — measured, not summed** (2026-11-09 board run):
 the WAMR pool is 2MB since the abi=2 wave — the 1MB pool could not
@@ -457,8 +460,9 @@ still refuses with an out-of-memory error when it does run out —
 never design against the pool's last byte — and a VGA scene
 additionally parks the ~600KB DVP frame buffer on the same PSRAM
 (allocated firmware-side, outside the pool), so four-module
-co-residency under a VGA scene is unmeasured; in the interp window
-the recipe pins QVGA anyway (previous note), which is the shape the
+co-residency under a VGA scene is unmeasured (three-module co-residency
+under a VGA scene measured green on the 2026-11-11 P3 run); the
+interpreter lane pins QVGA (note above), which is the shape the
 four-module runs were measured at.
 
 **No camera tool on the MCP face — assemble state from the modules**:
