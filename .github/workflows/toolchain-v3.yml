@@ -162,10 +162,12 @@ jobs:
 
       # t9-llvm's mtime trap: a cache hit restores the BUILD tree but
       # the fresh source fetch rewrote every input newer — backdate the
-      # sources so the restored outputs stay to date.
+      # sources so the restored outputs stay to date. PORTABLE time
+      # spec: POSIX touch -t CCYYMMDDhhmm (GNU touch -d accepts a bare
+      # date, BSD touch does not — the mac legs read -t).
       - name: backdate sources after a cache hit (keep outputs to date)
         if: steps.llvm-cache.outputs.cache-hit == 'true'
-        run: find llvm-project -path llvm-project/build -prune -o -type f -exec touch -d '2020-01-01' {} +
+        run: find llvm-project -path llvm-project/build -prune -o -type f -exec touch -t 202001010000 {} +
 
       - name: deps (linux)
         if: runner.os == 'Linux'
