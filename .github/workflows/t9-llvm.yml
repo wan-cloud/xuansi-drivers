@@ -199,26 +199,28 @@ jobs:
           src = p.read_text()
           anchor = "    if (!(obj_data->binary = LLVMCreateBinary(obj_data->mem_buf, NULL, &err))) {"
           assert src.count(anchor) == 1, "anchor not found"
-          dump = """    /* xuansi CI instrumentation: dump the emitted object file so the
-       ELF-level assertions run on the real bytes wamrc produced. */
-    {
-        const char *xuansi_obj_path = getenv("XUANSI_DUMP_OBJ");
-        if (xuansi_obj_path != NULL) {
-            FILE *xuansi_f = fopen(xuansi_obj_path, "wb");
-            if (xuansi_f != NULL) {
-                const char *xuansi_start = LLVMGetBufferStart(obj_data->mem_buf);
-                size_t xuansi_size = LLVMGetBufferSize(obj_data->mem_buf);
-                fwrite(xuansi_start, 1, xuansi_size, xuansi_f);
-                fclose(xuansi_f);
-                printf("xuansi: dumped object file to %s (%zu bytes)\\n",
-                       xuansi_obj_path, xuansi_size);
-            } else {
-                printf("xuansi: cannot open XUANSI_DUMP_OBJ=%s\\n", xuansi_obj_path);
-            }
-        }
-    }
-
-"""
+          dump_lines = [
+              '    /* xuansi CI instrumentation: dump the emitted object file so the',
+              '       ELF-level assertions run on the real bytes wamrc produced. */',
+              '    {',
+              '        const char *xuansi_obj_path = getenv("XUANSI_DUMP_OBJ");',
+              '        if (xuansi_obj_path != NULL) {',
+              '            FILE *xuansi_f = fopen(xuansi_obj_path, "wb");',
+              '            if (xuansi_f != NULL) {',
+              '                const char *xuansi_start = LLVMGetBufferStart(obj_data->mem_buf);',
+              '                size_t xuansi_size = LLVMGetBufferSize(obj_data->mem_buf);',
+              '                fwrite(xuansi_start, 1, xuansi_size, xuansi_f);',
+              '                fclose(xuansi_f);',
+              '                printf("xuansi: dumped object file to %s (%zu bytes)\\n",',
+              '                       xuansi_obj_path, xuansi_size);',
+              '            } else {',
+              '                printf("xuansi: cannot open XUANSI_DUMP_OBJ=%s\\n", xuansi_obj_path);',
+              '            }',
+              '        }',
+              '    }',
+              '',
+          ]
+          dump = "\n".join(dump_lines)
           p.write_text(src.replace(anchor, dump + anchor, 1))
           print("instrumentation applied")
           EOF
