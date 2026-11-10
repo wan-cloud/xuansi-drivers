@@ -79,6 +79,16 @@ jobs:
           path: llvm-project/build
           key: t9-llvm-build-${{ steps.src.outputs.sha }}-notools-linux-x64
 
+      # A cache hit restores the BUILD tree, but the source fetch above
+      # wrote every source file with a fresh mtime, which would make
+      # every ninja target look dirty again (the first rerun of this
+      # workflow re-paid a full 37-minute rebuild inside "ninja
+      # install" because of exactly this). Backdate all source files so
+      # the restored build outputs stay newer than their inputs.
+      - name: backdate sources after a cache hit (keep outputs up to date)
+        if: steps.llvm-cache.outputs.cache-hit == 'true'
+        run: find llvm-project -path llvm-project/build -prune -o -type f -exec touch -d '2020-01-01' {} +
+
       - name: deps
         run: sudo apt-get update -qq && sudo apt-get install -y -qq ninja-build ccache zstd
 
