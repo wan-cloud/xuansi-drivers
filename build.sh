@@ -1,13 +1,19 @@
 #!/bin/sh
-# build.sh — build one or all driver modules (wasi-sdk -> wasm32; wamrc ->
-# xtensa AOT as an auxiliary artifact).
+# build.sh — build one or all driver modules (wasi-sdk -> wasm32; the
+# toolchain-v3 surgery wamrc -> xtensa AOT, a first-class deliverable
+# since P3-T12: .wasm + .aot are dual artifacts, both pinned in
+# index.json files[] and each module's meta.json aot namespace).
 #
 # Toolchain pins (frozen; see README "Toolchain"):
 #   wasi-sdk 24.0 (LLVM 18.1.2)
 #     https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-24/wasi-sdk-24.0-x86_64-linux.tar.gz
 #     sha256 c6c38aab56e5de88adf6c1ebc9c3ae8da72f88ec2b656fb024eda8d4167a0bc5
-#   wamrc WAMR-2.4.0 (source-built with the espressif/llvm-project
-#     xtensa_release_18.1.2 backend; prebuilt releases lack xtensa)
+#   wamrc = the toolchain-v3 SURGERY wamrc: WAMR fork xuansi/base-2.4.0
+#     built against wan-cloud/llvm-project xuansi/a3-surgery (kind
+#     xuansi-surgery-wamrc). The default path is the xuansi_toolchain_fetch
+#     cache layout (~/.cache/xuansi-wasm/wamrc/wamrc); set WAMRC to
+#     override. A stock wamrc (toolchain-v2) does NOT reproduce the
+#     committed .aot hashes — its containers are the internal-SRAM lane.
 #
 # Usage:
 #   tools/build.sh [name ...]     build named modules (default: all)
@@ -23,7 +29,8 @@ cd "$HERE"
 
 CACHE="${XUANSI_WASM_CACHE:-$HOME/.cache/xuansi-wasm}"
 WASI_SDK="${WASI_SDK:-$CACHE/wasi-sdk-24.0-x86_64-linux}"
-WAMRC="${WAMRC:-$CACHE/wamr/wamr-compiler/build/wamrc}"
+WAMRC="${WAMRC:-$CACHE/wamrc/wamrc}"   # toolchain-v3 surgery wamrc
+                                              # (xuansi_toolchain_fetch layout)
 
 CC="$WASI_SDK/bin/clang"
 SYSROOT="$WASI_SDK/share/wasi-sysroot"
@@ -84,12 +91,12 @@ build_one() {  # build_one <name> <out-dir>
     fi
     echo "   $(wc -c < "$out/$name/$ver/$name.wasm") bytes $name.wasm  sha256 $(sha256sum "$out/$name/$ver/$name.wasm" | cut -d' ' -f1)"
     if [ -x "$WAMRC" ]; then
-        echo "== $name@$ver: aot (auxiliary) =="
+        echo "== $name@$ver: aot (deliverable, toolchain-v3 surgery) =="
         "$WAMRC" --target=xtensa --cpu=esp32s3 --size-level=3 \
                  -o "$out/$name/$ver/$name.aot" "$out/$name/$ver/$name.wasm" >/dev/null
         echo "   $(wc -c < "$out/$name/$ver/$name.aot") bytes $name.aot  sha256 $(sha256sum "$out/$name/$ver/$name.aot" | cut -d' ' -f1)"
     else
-        echo "== $name@$ver: wamrc not found at $WAMRC — skipping .aot (auxiliary) =="
+        echo "== $name@$ver: wamrc not found at $WAMRC — skipping .aot (deliverable; index files[] pins it — CI is the reproduction gate) =="
     fi
 }
 
@@ -102,7 +109,9 @@ all_names() {
 
 if [ "$1" = "--check" ]; then
     # Rebuild into a scratch dir and compare hashes against the committed
-    # index.json (deliverable files[]) and *.meta.json (auxiliary .aot).
+    # index.json (the files[] deliverables: .wasm AND, since P3-T12, the
+    # toolchain-v3 .aot) and *.meta.json (the aot namespace cross-check +
+    # historical auxiliary entries).
     scratch="$(mktemp -d)"
     trap 'rm -rf "$scratch"' EXIT
     for n in $(all_names); do build_one "$n" "$scratch"; done

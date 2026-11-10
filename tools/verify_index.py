@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """verify_index.py — compare freshly built module hashes against the
-committed index.json (deliverable files[]) and per-version meta.json
-(auxiliary .aot).
+committed index.json (deliverable files[]) and per-version meta.json.
 
 Usage: verify_index.py <built-root> <committed-root> <index.json>
 
@@ -10,10 +9,15 @@ Usage: verify_index.py <built-root> <committed-root> <index.json>
 index lists must exist with an exact sha256/bytes match — rebuilt from
 current sources when the scratch build produces that version, else (a
 historical entry, pinned beside a newer current version) verified in
-place against the committed artifact. Every .aot the meta.json records
-as auxiliary is compared the same way (a mismatch is reported but only
-fails the run when --strict is given, because wamrc output is only
-reproducible across identical wamrc builds).
+place against the committed artifact. Since P3-T12 the .aot is a
+first-class deliverable (dual artifact: .wasm architecture-neutral +
+.aot per-target in the aot namespace), so the files[] check covers it
+HARD — and each meta.json's aot.<target> pin is cross-checked against
+the matching files[] entry (two pins, one artifact, zero drift).
+Historical auxiliary entries (pre-v3 metas) are compared the same way
+(a mismatch is reported but only fails the run when --strict is
+given, because those stock-wamrc outputs were only reproducible across
+identical wamrc builds).
 """
 import hashlib
 import json
@@ -85,6 +89,30 @@ def main() -> int:
         if not meta_path.is_file():
             continue
         meta = json.loads(meta_path.read_text())
+
+        # the aot namespace (P3-T12 dual artifacts): each target pin
+        # must agree with the index's own files[] entry for that path
+        # — two pins over one artifact, mechanically cross-checked so
+        # a drifted edit on either side fails here, hard.
+        aot_ns = meta.get("aot") or {}
+        for target, ent in aot_ns.items():
+            rel = ent["path"]
+            match = [f for f in mod.get("files", []) if f["path"] == rel]
+            if not match:
+                print(f"FAIL aot[{target}] {rel}: meta pins it, index "
+                      f"files[] does not list it", file=sys.stderr)
+                fails += 1
+                continue
+            f = match[0]
+            ok = (ent["sha256"] == f["sha256"] and ent["bytes"] == f["bytes"])
+            print(f"{'OK  ' if ok else 'FAIL'} aot[{target}] {rel}: "
+                  f"meta==index pins {'agree' if ok else 'DRIFT'}")
+            if not ok:
+                print(f"     meta says sha256={ent['sha256']} "
+                      f"bytes={ent['bytes']}; index says sha256={f['sha256']} "
+                      f"bytes={f['bytes']}", file=sys.stderr)
+                fails += 1
+
         for aux in meta.get("auxiliary", []):
             rel = aux["path"]
             got = built / Path(rel).relative_to("modules")

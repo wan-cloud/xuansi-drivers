@@ -11,6 +11,12 @@
           "path": "modules/hello/1.0.0/hello.wasm",
           "sha256": "ae789210a99482df2fbc9607b4df177a2c97009e76807c2b8098ca944744c9b0",
           "bytes": 5714
+        },
+        {
+          "path": "modules/hello/1.0.0/hello.aot",
+          "sha256": "895f95af3565b16dae8dffd747107b1c141804122a06407bef0eabc54b9d8ba7",
+          "bytes": 9016,
+          "target": "esp32s3"
         }
       ],
       "src_commit": "234d7ccae4a30402a7346c6ab8592d16e45a150e"
@@ -39,6 +45,12 @@
           "path": "modules/ledwatch/2.0.0/ledwatch.wasm",
           "sha256": "774df0cf27c06f297bbe7cae49379b2bfc54a2ad150e3e954c6cfacea4d056f1",
           "bytes": 7537
+        },
+        {
+          "path": "modules/ledwatch/2.0.0/ledwatch.aot",
+          "sha256": "7b941a900bf10a7e967a5d22eaeec5a114456c1d984c42250600946d64ff0ba2",
+          "bytes": 12744,
+          "target": "esp32s3"
         }
       ],
       "fw_compat": {
@@ -56,6 +68,12 @@
           "path": "modules/st7789/1.0.0/st7789.wasm",
           "sha256": "fb161861a19589a9b73b001c24c69bfd118f0904bd3c49f013c5565b1a630f2a",
           "bytes": 13487
+        },
+        {
+          "path": "modules/st7789/1.0.0/st7789.aot",
+          "sha256": "27207f65a7778f682a46b342d44ff6d7d57a6c6229126df01a36ff052b323e0c",
+          "bytes": 24012,
+          "target": "esp32s3"
         }
       ],
       "src_commit": "234d7ccae4a30402a7346c6ab8592d16e45a150e"
@@ -70,6 +88,12 @@
           "path": "modules/gc2145/1.0.0/gc2145.wasm",
           "sha256": "97b4770aef610c7f3fe219403929aa09379cb7e79ca89af91f642f57f3231552",
           "bytes": 6905
+        },
+        {
+          "path": "modules/gc2145/1.0.0/gc2145.aot",
+          "sha256": "6cea2b5df6e1174191deb19db8f659279fe0f9b1a6eb45409eeb1493889833a3",
+          "bytes": 11904,
+          "target": "esp32s3"
         }
       ],
       "fw_compat": {
@@ -87,6 +111,12 @@
           "path": "modules/jpge/1.0.0/jpge.wasm",
           "sha256": "b44ab1a7faad32a76c3b5834f850192e4837e60d60c42e051a45396593393d06",
           "bytes": 28642
+        },
+        {
+          "path": "modules/jpge/1.0.0/jpge.aot",
+          "sha256": "4dc638f3b78de823fec68df3d6d935438749a10cbd4e138308f673e49df91a71",
+          "bytes": 83524,
+          "target": "esp32s3"
         }
       ],
       "fw_compat": {

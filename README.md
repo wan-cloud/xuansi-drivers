@@ -63,16 +63,50 @@ Further symbol additions or semantic changes mean a new abi version —
 from abi=3 on the table is strictly additive (the abi=2 retirements
 were the one-time exemption above).
 
-## Delivery track: `.wasm` bytecode
+## Delivery track: dual artifacts (`.wasm` + `.aot`)
 
-The deliverable artifact is the **interpreter bytecode** (`.wasm`),
-listed in `index.json` and deployed to `/drv/<name>.wasm` on the board.
-`.aot` files are still built by CI (wamrc, hash-recorded) as
-**auxiliary** artifacts — future-ready, but the current board stack
-honestly refuses to *execute* them (an upstream AOT-in-PSRAM execution
-defect on ESP32-S3; when it is fixed upstream, the `.aot` track turns
-back on with zero module-side changes). The `.aot` is therefore never
-listed as a deployable file in `index.json`.
+Every module ships **two** deliverable artifacts since P3-T12
+(spec §8-4 dual-product ruling):
+
+- **`.wasm`** — the interpreter bytecode, architecture-neutral, loads
+  on any fw with a wasm loader (>=0.2.0). The universal fallback.
+- **`.aot`** — the compiled xtensa/esp32s3 container, per-target
+  (meta `aot` namespace: `"aot": {"esp32s3": {...}}` — future targets
+  add keys, no schema migration). Built by the **toolchain-v3 surgery
+  wamrc** (below): its containers carry the split literal pool
+  (`xuansi.literal` CUSTOM section, `literal_size == 0`), which fw
+  **0.3.0+** classifies SURGERY and places in **PSRAM exec** — the
+  10x jpge-class speedup with no internal-SRAM budget gate. Older fw
+  honestly refuses the shape (the pool section predates RELOCATION by
+  construction — an old-runtime honest refusal, not a crash).
+
+Both are pinned in `index.json` `files[]` (the daemon's
+`xuansi_driver_fetch` lands both and verifies both hashes) and in each
+module's `meta.json` (`deliverable` + `aot.esp32s3`). CI rebuilds both
+from the pinned toolchain and hard-compares — the single-source lock:
+the release-asset wamrc rebuilding the same `.wasm` must reproduce the
+committed `.aot` bit-for-bit. The loader prefers the `.aot` when both
+are on the board (kind-aware since P3-T11: SURGERY → PSRAM exec,
+STOCK → the internal-SRAM lane); an over-budget STOCK `.aot` is
+honestly refused at load with the reason and the fix in the error —
+never silently swapped for the `.wasm`.
+
+Two lane notes carried from the toolchain surgery tasks (T9/T10):
+
+- **~32KB per-module pool ceiling** — the literal pool lives in the
+  data heap as one `xuansi.literal` section; the LLVM-side `addmi`
+  expansion bounds the addressable pool span at roughly 32KB, so a
+  module whose literal mass grows past that is the practical size
+  ceiling of the surgery lane (none of the five modules approaches it;
+  the compiler fails loudly past the encodable span, never silently).
+- **default-ON pairing** — the surgery codegen is the xtensa DEFAULT
+  on the toolchain-v3 wamrc, and it is paired by construction:
+  v3 wamrc ↔ fork LLVM (`xuansi/a3-surgery`) ↔ WAMR fork
+  (`xuansi/base-2.4.0`) ↔ fw >=0.3.0 (the kind-aware loader). Using
+  any stock element against that chain (an old wamrc, an old fw)
+  either honestly refuses or falls back to the narrower lane — there
+  is no silent mixing. `--disable-xuansi-surgery` on the fork wamrc
+  rebuilds the stock lane explicitly.
 
 ## ledwatch (algorithm module)
 
@@ -436,21 +470,25 @@ camera-state passthrough plus the module's last framesize — and the
 `diag.pins` bench op, the pin-claim table (which owner holds which
 pin).
 
-## Toolchain (pinned)
+## Toolchain (pinned, two generations)
 
 | piece | pin |
 |---|---|
 | wasi-sdk | **24.0** (LLVM 18.1.2) — [release tarball](https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-24/wasi-sdk-24.0-x86_64-linux.tar.gz), sha256 `c6c38aab56e5de88adf6c1ebc9c3ae8da72f88ec2b656fb024eda8d4167a0bc5` |
-| wamrc | **WAMR-2.4.0** (tag `WAMR-2.4.0`, commit `47c7c85a…`) built from source against [espressif/llvm-project](https://github.com/espressif/llvm-project) `xtensa_release_18.1.2` (commit `344b928e…`) — prebuilt wamrc releases lack the xtensa backend |
+| wamrc (**toolchain-v3**, the default/latest) | the **surgery wamrc**: WAMR fork [wan-cloud/wasm-micro-runtime](https://github.com/wan-cloud/wasm-micro-runtime) `xuansi/base-2.4.0` (commit `17036fa0…`) built against the LLVM fork [wan-cloud/llvm-project](https://github.com/wan-cloud/llvm-project) `xuansi/a3-surgery` (commit `cf84bd31…`) — kind `xuansi-surgery-wamrc`; its `.aot` is the PSRAM-exec deliverable lane |
+| wamrc (toolchain-v2, kept) | **WAMR-2.4.0** (tag `WAMR-2.4.0`, commit `47c7c85a…`) built from source against [espressif/llvm-project](https://github.com/espressif/llvm-project) `xtensa_release_18.1.2` (commit `344b928e…`) — the stock wamrc; its `.aot` is the fw-internal-SRAM lane (`fw_compat.aot ">=0.3.0"`, within `caps aot_exec_budget_bytes`) |
 
 The machine-readable pin is [`toolchain-index.json`](toolchain-index.json)
 (structure-checked by `tools/verify_tcindex.py`) — the pinned source the
 daemon's `xuansi_toolchain_fetch` tool fetches, served raw from this
-repository's `main`. The wamrc leg-matrix is still rolling out:
-platforms without a built wamrc carry `null` there (linux-arm64 and
-win-x64 today — wasi-sdk is pinned regardless, and the wamrc entries
-land as those legs are built). win-x64 wamrc: best-effort leg failed
-(MSVC probe); tracked P2.
+repository's `main`; `latest` is **toolchain-v3** (the surgery
+generation). The wamrc leg-matrix per generation: v3 carries
+linux-x64 + both mac legs (built in-workflow by `toolchain-v3.yml`,
+which also attaches the llvm-dev package of the same lineage — the
+release IS the pin chain); platforms without a built wamrc carry
+`null` there (linux-arm64 and win-x64 — wasi-sdk is pinned regardless,
+and the wamrc entries land as those legs are built). win-x64 wamrc:
+best-effort leg failed (MSVC probe); tracked P2.
 
 Build flags are frozen in `build.sh` (`-O2 -fno-jump-tables -nostdlib`,
 `--no-entry --initial-memory=<per module> --max-memory=1048576
@@ -524,17 +562,18 @@ same tools through their agent):
    bench.wasm.call("mymod", "echo", {1, 2, 3})
    ```
 
-`.aot` today: the toolchain's aot domain is OPEN (`fw_compat.aot
-">=0.3.0"`, P3-T7) — the stock wamrc above compiles `.aot` that fw
-0.3.0+ loads into fw-INTERNAL SRAM within the board's advertised
-`aot_exec_budget_bytes` ceiling (an over-budget `.aot` is honestly
-refused at load, never silently swapped for the `.wasm`). Through
-`xuansi_wasm_build`, `wamrc_path` is that lane's knob: the build
-compiles the `.wasm` one step further with the given wamrc (this
-repo's frozen recipe: `--target=xtensa --cpu=esp32s3
---size-level=3`) and stores `drivers/<name>@<version>.aot` as a
-`wasm-dev` artifact. PSRAM-sized `.aot` (the surgery toolchain)
-arrives with toolchain-v3.
+`.aot` lanes (dual since P3-T12): `fw_compat.aot ">=0.3.0"` covers
+BOTH generations. **toolchain-v3** (the default) is the surgery wamrc —
+`xuansi_wasm_build`'s `aot: true` knob compiles the freshly-built
+`.wasm` one step further with the cache's v3 wamrc (this repo's frozen
+recipe: `--target=xtensa --cpu=esp32s3 --size-level=3`) and stores
+`drivers/<name>@<version>.aot` (manifest kind `wasm` — the
+cache-paired build): the split-literal-pool container fw 0.3.0+ places
+in **PSRAM exec**. **toolchain-v2**'s stock wamrc compiles the narrower
+fw-INTERNAL SRAM lane (within the board's advertised
+`aot_exec_budget_bytes` ceiling; an over-budget `.aot` is honestly
+refused at load, never silently swapped for the `.wasm`) — reachable
+through the `wamrc_path` dev override (manifest kind `wasm-dev`).
 
 ### Manual fallback (documentation-level)
 
@@ -551,8 +590,8 @@ sh (linux / macOS):
 ```sh
 IDX=https://raw.githubusercontent.com/wan-cloud/xuansi-drivers/main/toolchain-index.json
 PLAT=linux-x64   # your platform key: linux-x64 | linux-arm64 | macos-x64 | macos-arm64
-URL=$(curl -fsSL "$IDX" | python3 -c "import json,sys; print(json.load(sys.stdin)['generations']['toolchain-v2']['platforms']['$PLAT']['wasi_sdk']['url'])")
-SHA=$(curl -fsSL "$IDX" | python3 -c "import json,sys; print(json.load(sys.stdin)['generations']['toolchain-v2']['platforms']['$PLAT']['wasi_sdk']['sha256'])")
+URL=$(curl -fsSL "$IDX" | python3 -c "import json,sys; print(json.load(sys.stdin)['generations']['toolchain-v3']['platforms']['$PLAT']['wasi_sdk']['url'])")
+SHA=$(curl -fsSL "$IDX" | python3 -c "import json,sys; print(json.load(sys.stdin)['generations']['toolchain-v3']['platforms']['$PLAT']['wasi_sdk']['sha256'])")
 curl -fL -o sdk.tar.gz "$URL"
 echo "$SHA  sdk.tar.gz" | sha256sum -c -        # must say OK (two spaces; macOS: shasum -a 256 -c -)
 CACHE="${XUANSI_WASM_CACHE:-$HOME/.cache/xuansi-wasm}"
@@ -563,7 +602,7 @@ PowerShell (windows):
 
 ```powershell
 $plat = 'win-x64'   # your platform key
-$a = (Invoke-RestMethod https://raw.githubusercontent.com/wan-cloud/xuansi-drivers/main/toolchain-index.json).generations.'toolchain-v2'.platforms.$plat.wasi_sdk
+$a = (Invoke-RestMethod https://raw.githubusercontent.com/wan-cloud/xuansi-drivers/main/toolchain-index.json).generations.'toolchain-v3'.platforms.$plat.wasi_sdk
 Invoke-WebRequest $a.url -OutFile sdk.tar.gz
 if ((Get-FileHash sdk.tar.gz -Algorithm SHA256).Hash -notin @($a.sha256, $a.sha256.ToUpper())) { throw 'sha256 mismatch' }
 $cache = if ($env:XUANSI_WASM_CACHE) { $env:XUANSI_WASM_CACHE } else { "$env:USERPROFILE\.cache\xuansi-wasm" }

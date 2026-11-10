@@ -7,20 +7,25 @@ on:
 env:
   WASI_SDK_URL: https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-24/wasi-sdk-24.0-x86_64-linux.tar.gz
   WASI_SDK_SHA256: c6c38aab56e5de88adf6c1ebc9c3ae8da72f88ec2b656fb024eda8d4167a0bc5
-  WAMR_COMMIT: 47c7c85ac21f240a878026af603e032065d183fb   # tag WAMR-2.4.0
-  XTENSA_LLVM_COMMIT: 344b928e67bfc1d07cb150609c55548e86a9bf19  # espressif/llvm-project, branch xtensa_release_18.1.2
+  # The toolchain-v3 SURGERY lineage (P3-T12): wamrc built from the
+  # wan-cloud WAMR fork against the wan-cloud llvm-project surgery
+  # branch. The .aot deliverables in modules/ are products of exactly
+  # this toolchain (drivers CI run 42860347011); this workflow's
+  # parity legs rebuild them from the release asset and hard-compare.
+  WAMR_FORK_COMMIT: 17036fa06e678a2bcbbda436c06b5aa3319486db   # wan-cloud/wasm-micro-runtime xuansi/base-2.4.0
+  SURGERY_LLVM_COMMIT: cf84bd31d7729d3eaa67328e9f6b219b4256b176   # wan-cloud/llvm-project xuansi/a3-surgery
   TOOLCHAIN_ROOT: ${{ github.workspace }}/.toolchain
-  # Prebuilt wamrc asset (toolchain-v2 release, built by toolchain.yml's
-  # fork tier from the wan-cloud/llvm-project dev package — same pins).
-  # "pending" until the release lands: the asset tier then skips itself
-  # and CI falls back to the source build below.
-  WAMRC_ASSET_URL: https://github.com/wan-cloud/xuansi-drivers/releases/download/toolchain-v2/wamrc-2.4.0-xtensa-18.1.2-linux-x64.tar.gz
-  WAMRC_MANIFEST_URL: https://github.com/wan-cloud/xuansi-drivers/releases/download/toolchain-v2/manifest.json
-  WAMRC_ASSET_SHA256: 209a6a51b6066f05e91060d95c2506ec0bad97cb898fec1fe634cd68865b9c42
-  # chain of custody: the toolchain-v2 wamrc must have been built from
-  # exactly this wan-cloud/llvm-project dev package (manifest cross-check).
-  LLVM_DEV_URL: https://github.com/wan-cloud/llvm-project/releases/download/llvm-dev-v1/llvm-xtensa-dev-344b928e-linux-x64.tar.zst
-  LLVM_DEV_SHA256: 20d0d6142a76e7c46645d85f507e020d2c3aa0af8dc60ba29cd127870e1944bb
+  # Prebuilt surgery wamrc asset (toolchain-v3 release, built by
+  # toolchain-v3.yml from the two pins above — same recipe). "pending"
+  # until the release lands: the asset tier then skips itself and CI
+  # falls back to the fork source build below.
+  WAMRC_ASSET_URL: https://github.com/wan-cloud/xuansi-drivers/releases/download/toolchain-v3/wamrc-2.4.0-xuansi-surgery-cf84bd31-linux-x64.tar.gz
+  WAMRC_MANIFEST_URL: https://github.com/wan-cloud/xuansi-drivers/releases/download/toolchain-v3/manifest.json
+  WAMRC_ASSET_SHA256: a69642458b4f78427d9bd2759b76aad6405fb609d7b8cb49ed384c890e3aad73
+  # chain of custody: the toolchain-v3 wamrc must have been built from
+  # exactly these fork sources (manifest cross-check), and its llvm
+  # dev package is the release asset of the same lineage.
+  LLVM_DEV_SHA256: 8717e17230195e274f84de7f258dd65fff770f77ff4ef31c2c1ee0fcb16e1dab
 
 jobs:
   build:
@@ -42,17 +47,18 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.TOOLCHAIN_ROOT }}/wamrc-install
-          key: wamrc-WAMR-2.4.0-xtensa-18.1.2-v3
+          key: wamrc-2.4.0-xuansi-surgery-cf84bd31-v1
 
-      # Asset tier: the toolchain-v2 release carries a wamrc built from
-      # exactly these pins (toolchain.yml, fork tier). Verified two
-      # ways — the tarball's sha256 against the WAMRC_ASSET_SHA256
+      # Asset tier: the toolchain-v3 release carries the surgery wamrc
+      # built from exactly these fork pins (toolchain-v3.yml). Verified
+      # two ways — the tarball's sha256 against the WAMRC_ASSET_SHA256
       # literal, and the release manifest's source SHAs against this
-      # workflow's pins (including the llvm-fork dev package hash) —
-      # then the xtensa backend is asserted before use. Any failure
-      # (absent release, hash drift, pin mismatch) falls through to the
-      # source build below.
-      - name: wamrc from the toolchain-v2 release asset
+      # workflow's pins (incl. the llvm-dev package hash of the same
+      # lineage) — then the SURGERY banner is asserted before use (a
+      # stock wamrc must never reproduce the committed .aot hashes).
+      # Any failure (absent release, hash drift, pin mismatch) falls
+      # through to the fork source build below.
+      - name: wamrc from the toolchain-v3 release asset
         id: wamrc-asset
         if: env.WAMRC_ASSET_SHA256 != 'pending' && steps.wamrc-cache.outputs.cache-hit != 'true'
         continue-on-error: true
@@ -66,63 +72,77 @@ jobs:
           import json, os, sys
           m = json.load(open(sys.argv[1]))
           pins = {
-              "esp_llvm_sha": os.environ["XTENSA_LLVM_COMMIT"],
-              "wamr_sha": os.environ["WAMR_COMMIT"],
+              "esp_llvm_sha": os.environ["SURGERY_LLVM_COMMIT"],
+              "wamr_sha": os.environ["WAMR_FORK_COMMIT"],
               "wasi_sdk_tarball_sha256": os.environ["WASI_SDK_SHA256"],
               "llvm_dev_sha256": os.environ["LLVM_DEV_SHA256"],
           }
           for k, want in pins.items():
               got = m.get(k)
               if got != want:
-                  sys.exit(f"toolchain-v2 manifest {k}={got} != this workflow's pin {want}")
+                  sys.exit(f"toolchain-v3 manifest {k}={got} != this workflow's pin {want}")
+          if not m.get("xuansi_surgery"):
+              sys.exit("toolchain-v3 manifest does not claim xuansi_surgery")
           print("manifest pins match")
           EOF
           tar -xzf "$TOOLCHAIN_ROOT/wamrc-asset.tar.gz" -C "$TOOLCHAIN_ROOT/wamrc-install"
-          # wamrc --target=help exits 1 by design — swallow it, grep decides
-          targets="$("$TOOLCHAIN_ROOT/wamrc-install/wamrc" --target=help 2>&1 || true)"
-          echo "$targets" | grep -q "xtensa"
-          echo "wamrc asset tier: OK (LLVM source build skipped)"
+          test -x "$TOOLCHAIN_ROOT/wamrc-install/wamrc"
+          # the surgery banner gate: the xtensa default on this fork
+          # wamrc must be surgery ON (the toolchain-v3.yml smoke gate's
+          # twin; grep decides, the --target=help exit is swallowed)
+          hello="$TOOLCHAIN_ROOT/surgery-probe.wasm"
+          cp modules/hello/1.0.0/hello.wasm "$hello"
+          "$TOOLCHAIN_ROOT/wamrc-install/wamrc" --target=xtensa --cpu=esp32s3 --size-level=3 \
+            -o "$TOOLCHAIN_ROOT/surgery-probe.aot" "$hello" 2>&1 | tee "$TOOLCHAIN_ROOT/probe.log"
+          grep -q "xuansi surgery mode: ON" "$TOOLCHAIN_ROOT/probe.log"
+          test -s "$TOOLCHAIN_ROOT/surgery-probe.aot"
+          echo "wamrc asset tier: OK (fork source build skipped)"
 
-      # Prebuilt wamrc releases lack the xtensa backend, so it is built
-      # from source once per cache key (~1h): WAMR-2.4.0 with the
-      # espressif/llvm-project xtensa_release_18.1.2 LLVM, then
-      # wamr-compiler linked against it. Same recipe as the frozen local
-      # toolchain (see README "Toolchain"). NOTE: the espressif fork
-      # registers Xtensa as an EXPERIMENTAL target — it must be pulled in
-      # via LLVM_EXPERIMENTAL_TARGETS_TO_BUILD (adding it to
-      # LLVM_TARGETS_TO_BUILD fatals: not in LLVM_ALL_TARGETS).
-      - name: build wamrc from pinned sources (cache/asset miss only)
+      # Fork source tier (cache/asset miss only): build the SAME
+      # toolchain from the two fork pins (~40min LLVM, cached) — the
+      # t10-wamr recipe. NOT the upstream WAMR/espressif build of the
+      # toolchain-v2 era: that wamrc's containers are the stock lane
+      # and would not reproduce the committed .aot hashes.
+      - name: build wamrc from the pinned forks (cache/asset miss only)
         if: steps.wamrc-cache.outputs.cache-hit != 'true' && steps.wamrc-asset.outcome != 'success'
         run: |
           set -eux
-          echo "::warning::wamrc asset tier did not succeed — falling back to the ~1h LLVM source build (B11 review take-away: fallbacks must be loud)"
+          echo "::warning::wamrc asset tier did not succeed — falling back to the ~40min fork source build (B11 review take-away: fallbacks must be loud)"
           sudo apt-get update -qq && sudo apt-get install -y -qq ninja-build ccache
           git init wamr
-          git -C wamr remote add origin https://github.com/bytecodealliance/wasm-micro-runtime.git
-          git -C wamr fetch --depth 1 origin "$WAMR_COMMIT"
+          git -C wamr remote add origin https://github.com/wan-cloud/wasm-micro-runtime.git
+          git -C wamr fetch --depth 1 origin "$WAMR_FORK_COMMIT"
           git -C wamr checkout FETCH_HEAD
-          git init wamr/core/deps/llvm
-          git -C wamr/core/deps/llvm remote add origin https://github.com/espressif/llvm-project.git
-          git -C wamr/core/deps/llvm fetch --depth 1 origin "$XTENSA_LLVM_COMMIT"
-          git -C wamr/core/deps/llvm checkout FETCH_HEAD
-          cmake -G Ninja -S wamr/core/deps/llvm/llvm -B wamr/core/deps/llvm/build \
+          git init llvm-fork
+          git -C llvm-fork remote add origin https://github.com/wan-cloud/llvm-project.git
+          git -C llvm-fork fetch --depth 1 origin "$SURGERY_LLVM_COMMIT"
+          git -C llvm-fork checkout FETCH_HEAD
+          cmake -G Ninja -S llvm-fork/llvm -B llvm-fork/build \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$PWD/llvm-fork-pkg" \
             -DLLVM_TARGETS_TO_BUILD="AArch64;ARM;Mips;RISCV;X86" \
             -DLLVM_EXPERIMENTAL_TARGETS_TO_BUILD=Xtensa \
+            -DLLVM_BUILD_TOOLS=OFF \
+            -DLLVM_TOOL_LTO_BUILD=OFF \
+            -DLLVM_TOOL_REMARKS_SHLIB_BUILD=OFF \
             -DCMAKE_CXX_FLAGS="-include cstdint" \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
-          ninja -C wamr/core/deps/llvm/build
+          ninja -C llvm-fork/build
+          ninja -C llvm-fork/build llvm-config
+          ninja -C llvm-fork/build install
           cmake -G Ninja -S wamr/wamr-compiler -B wamr/wamr-compiler/build \
             -DCMAKE_BUILD_TYPE= \
             -DCMAKE_CXX_FLAGS="-include cstdint" \
-            -DLLVM_DIR="$PWD/wamr/core/deps/llvm/build/lib/cmake/llvm"
-          cmake --build wamr/wamr-compiler/build -j"$(nproc)"
+            -DWAMR_BUILD_WITH_CUSTOM_LLVM=1 \
+            -DLLVM_DIR="$PWD/llvm-fork-pkg/lib/cmake/llvm"
+          ninja -C wamr/wamr-compiler/build
           mkdir -p "$TOOLCHAIN_ROOT/wamrc-install"
           cp wamr/wamr-compiler/build/wamrc "$TOOLCHAIN_ROOT/wamrc-install/wamrc"
-          # wamrc --target=help exits 1 by design — swallow it, grep decides
-          targets="$("$TOOLCHAIN_ROOT/wamrc-install/wamrc" --target=help 2>&1 || true)"
-          echo "$targets"
-          echo "$targets" | grep -q "xtensa" || { echo "wamrc lacks the xtensa backend" >&2; exit 1; }
+          hello="$TOOLCHAIN_ROOT/surgery-probe.wasm"
+          cp modules/hello/1.0.0/hello.wasm "$hello"
+          "$TOOLCHAIN_ROOT/wamrc-install/wamrc" --target=xtensa --cpu=esp32s3 --size-level=3 \
+            -o "$TOOLCHAIN_ROOT/surgery-probe.aot" "$hello" 2>&1 | tee "$TOOLCHAIN_ROOT/probe.log"
+          grep -q "xuansi surgery mode: ON" "$TOOLCHAIN_ROOT/probe.log"
 
       - name: build all modules
         run: |
@@ -130,23 +150,22 @@ jobs:
           export WAMRC="$TOOLCHAIN_ROOT/wamrc-install/wamrc"
           ./build.sh
 
-      - name: deliverable artifacts match the committed ones (hard gate; .aot advisory)
+      # P3-T12: the .aot is a first-class deliverable — BOTH artifacts
+      # (.wasm and .aot) must be byte-identical with the committed
+      # ones. The .aot leg is the v3 SINGLE-SOURCE LOCK: the release
+      # asset wamrc (or its fork-source twin) rebuilding the same .wasm
+      # must reproduce the canonical containers bit-for-bit (proven
+      # across independent CI runs and the local stock wamrc for the
+      # stock lane since T10).
+      - name: deliverable artifacts match the committed ones (hard gate; .wasm + .aot)
         run: |
-          # Deliverables (.wasm, what index.json files[] lists) must be
-          # byte-identical. The auxiliary .aot depends on the wamrc build
-          # environment; its committed hash is provenance recorded in
-          # meta.json and verified advisory (cross-wamrc-build byte
-          # determinism is not asserted).
-          if ! git diff --quiet -- modules/ ':(exclude)*.aot'; then
-            git diff --stat -- modules/ ':(exclude)*.aot'
-            echo "ERROR: freshly built deliverable artifacts differ from the committed ones" >&2
+          if ! git diff --quiet -- modules/; then
+            git diff --stat -- modules/
+            echo "ERROR: freshly built deliverable artifacts (.wasm or .aot) differ from the committed ones" >&2
+            echo "  .wasm: a source/flag drift; .aot: a toolchain drift off toolchain-v3 (a stock wamrc produces the internal-SRAM lane)" >&2
             exit 1
           fi
-          if ! git diff --quiet -- modules/; then
-            echo "note: auxiliary .aot differs from the committed copy (advisory; meta.json hash stands):"
-            git diff --stat -- modules/
-          fi
-          echo "build: deliverable outputs are byte-identical to the committed ones"
+          echo "build: deliverable outputs (.wasm + .aot) are byte-identical to the committed ones"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -172,7 +191,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.TOOLCHAIN_ROOT }}/wamrc-install
-          key: wamrc-WAMR-2.4.0-xtensa-18.1.2-v3
+          key: wamrc-2.4.0-xuansi-surgery-cf84bd31-v1
 
       - name: rebuild from scratch and compare hashes vs index.json / meta.json
         run: |

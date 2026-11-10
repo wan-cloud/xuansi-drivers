@@ -35,19 +35,19 @@
     "sha256": "774df0cf27c06f297bbe7cae49379b2bfc54a2ad150e3e954c6cfacea4d056f1",
     "bytes": 7537
   },
-  "auxiliary": [
-    {
+  "aot": {
+    "esp32s3": {
       "path": "modules/ledwatch/2.0.0/ledwatch.aot",
-      "sha256": "b88b629c17da4d5924e129b7e95bcf5506a720544b51f4cfe94d7c5c5af5542b",
-      "bytes": 14700,
-      "note": "wamrc xtensa/esp32s3 output, hash-recorded for provenance. NOT deployable on the current board stack: the loader honestly refuses .aot execution (upstream ESP32-S3 AOT-in-PSRAM defect). Future-ready; never listed in index.json files[]."
+      "sha256": "7b941a900bf10a7e967a5d22eaeec5a114456c1d984c42250600946d64ff0ba2",
+      "bytes": 12744,
+      "note": "toolchain-v3 surgery container (kind xuansi-surgery-wamrc: the wan-cloud WAMR fork xuansi/base-2.4.0 wamrc built against the wan-cloud llvm-project surgery branch xuansi/a3-surgery; frozen recipe --target=xtensa --cpu=esp32s3 --size-level=3). Split literal pool: TEXT literal_size=0 + the xuansi.literal CUSTOM section — fw 0.3.0+ classifies it SURGERY and places the code in PSRAM exec (no internal-SRAM budget gate); older fw honestly refuses (the pool section predates RELOCATION by construction). Canonical product of drivers CI run 42860347011; the CI parity leg rebuilds it from the toolchain-v3 release wamrc and hard-compares the hash (single-source lock)."
     }
-  ],
+  },
   "fw_compat": {
     "wasm": ">=0.3.0"
   },
   "toolchain": {
     "wasi-sdk": "24.0 (LLVM 18.1.2)",
-    "wamrc": "WAMR-2.4.0 built against espressif/llvm-project xtensa_release_18.1.2"
+    "wamrc": "WAMR fork xuansi/base-2.4.0 @ 17036fa0 built against wan-cloud/llvm-project xuansi/a3-surgery @ cf84bd31 (toolchain-v3, kind xuansi-surgery-wamrc)"
   }
 }
