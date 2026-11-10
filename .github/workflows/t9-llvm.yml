@@ -19,9 +19,15 @@ name: t9-llvm
 #               ELF/object level (mode=surgery):
 #                 1. .literal section is SHF_ALLOC without SHF_EXECINSTR
 #                 2. R_XTENSA_SLOT0_OP count == 0 (no l32r to the pool)
-#                 3. literal base chain (l32i a?, a2, 8 / l32i a?, a?, 64)
+#                 3. literal base chain (l32i a?, a2, 8 / l32i a?, a?, 320)
 #                    present in the disassembly; no l32r anywhere
 #                 4. all five modules compile
+#                 5. P3-T11b arg0 gates: every precheck-wrapper -> wrapped
+#                    body call forwards exec_env verbatim into arg0
+#                    (mov aX, a2); the argument-promotion shape (wrapper
+#                    loads [x+0x178] = memory base into the outgoing arg0)
+#                    must be absent — that promotion broke the baked
+#                    literal-base chain in the T11 board run.
 #               mode=record only records (baseline-shaped runs).
 
 on:
@@ -333,18 +339,44 @@ jobs:
               l32r = len(re.findall(r"\bl32r\b", dis))
               l32i = len(re.findall(r"\bl32i(?:\.n)?\b", dis))
               addmi = len(re.findall(r"\baddmi\b", dis))
-              # literal base chain: l32i aX, a2, 8 ... l32i aX, aX, 64
-              chain = re.findall(r"l32i\s+(a\d+),\s*a2,\s*8[\s\S]{0,120}?l32i\s+\1,\s*\1,\s*64", dis)
+              # literal base chain: l32i aX, a2, 8 ... l32i aX, aX, 320
+              # (slot moved 64 -> 320 in llvm xuansi/a3-surgery 5a71593,
+              # "[Xtensa] Move the literal base slot to the reserved tail";
+              # objdump renders 320 as 0x140)
+              chain = re.findall(r"l32i\s+(a\d+),\s*a2,\s*8[\s\S]{0,120}?l32i\s+\1,\s*\1,\s*(?:320|0x140)", dis)
+              # P3-T11b arg0 gates. Windowed ABI: the callee's arg0 sits in
+              # the caller's a6/a10/a14 for call4/call8/call12. The wrapped
+              # body (internal + noinline + short-call, single caller) must
+              # receive exec_env verbatim — its literal-base chain reads the
+              # first argument register. The promoted shape (memory base
+              # loaded from aot_inst+0x178 into the outgoing arg0 within the
+              # pre-call window) must be absent.
+              arg0reg = {"4": "a6", "8": "a10", "12": "a14"}
+              ilines = [ln for ln in dis.splitlines() if re.match(r"\s*[0-9a-f]+:", ln)]
+              arg0_fwd = arg0_promoted = 0
+              for i, ln in enumerate(ilines):
+                  cm = re.search(r"\bcall(4|8|12)\b", ln)
+                  if not cm:
+                      continue
+                  r0 = arg0reg[cm.group(1)]
+                  win = ilines[max(0, i - 6):i]
+                  if any(re.search(r"\bmov(\.n)?\s+" + r0 + r",\s*a2\b", w) for w in win):
+                      arg0_fwd += 1
+                  if any(re.search(r"\bl32i(\.n)?\s+" + r0 + r",\s*a\d+,\s*(?:0x178|376)\b", w)
+                         for w in win):
+                      arg0_promoted += 1
               row = dict(mod=m, lit_flags=lit["flags"] if lit else None,
                          lit_size=lit["size"] if lit else 0,
                          text=txt["size"] if txt else 0,
                          slot0=slot0, r32=r32, l32r=l32r, l32i=l32i,
                          addmi=addmi, chain=len(chain), insns=total,
+                         arg0_fwd=arg0_fwd, arg0_promoted=arg0_promoted,
                          stock=stock[m])
               table.append(row)
               print(f"{m:9} flags={row['lit_flags']!s:4} lit={row['lit_size']:5} "
                     f"text={row['text']:6} slot0={slot0:4} r32={r32:4} l32r={l32r:4} "
                     f"l32i={l32i:5} addmi={addmi:3} chain={len(chain):3} insns={total:6} "
+                    f"arg0_fwd={arg0_fwd:3} arg0_promoted={arg0_promoted} "
                     f"(stock slot0={stock[m]['slot0']} lit={stock[m]['lit']} text={stock[m]['text']})")
               if mode != "surgery":
                   continue
@@ -360,14 +392,20 @@ jobs:
               if l32r != 0:
                   failures.append(f"{m}: {l32r} l32r instructions remain")
               if len(chain) < 1:
-                  failures.append(f"{m}: literal base chain (l32i a?,a2,8 / l32i a?,a?,64) not found")
+                  failures.append(f"{m}: literal base chain (l32i a?,a2,8 / l32i a?,a?,320) not found")
+              if arg0_promoted != 0:
+                  failures.append(f"{m}: {arg0_promoted} call(s) load [x+0x178] into "
+                                  "outgoing arg0 (argument promotion survived)")
+              if arg0_fwd < 1:
+                  failures.append(f"{m}: no wrapped-body call forwards exec_env "
+                                  "verbatim into arg0 (mov aX, a2)")
           print()
           if mode == "surgery":
               if failures:
                   for f in failures:
                       print("FAIL " + f)
                   sys.exit(1)
-              print("ALL FOUR GATES PASS x 5 MODULES")
+              print("ALL FIVE GATES PASS x 5 MODULES")
           with open("t9out/t9-table.json", "w") as fh:
               json.dump(table, fh, indent=1)
           EOF
