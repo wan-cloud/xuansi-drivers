@@ -124,17 +124,18 @@ jobs:
 
       # T9-designed backstop, the t10-wamr first step: the slot
       # constants live physically in both repos; any drift is a hard
-      # red before the ~40-minute LLVM build.
+      # red before the ~40-minute LLVM build. PORTABLE extraction
+      # (mac legs: BSD grep has no -P — sed, not grep -oP).
       - name: constant gate (both repos must agree)
         run: |
           set -eux
           llvm_hdr="llvm-project/llvm/lib/Target/Xtensa/XtensaSubtarget.h"
           wamr_hdr="wamr/core/iwasm/aot/xuansi_aot.h"
           test -f "$llvm_hdr" && test -f "$wamr_hdr"
-          llvm_slot="$(grep -oP 'XUANSI_LITERAL_BASE_SLOT\s*=\s*\K[0-9]+' "$llvm_hdr")"
-          llvm_exec="$(grep -oP 'XUANSI_EXEC_ENV_MODULE_INST_OFFSET\s*=\s*\K[0-9]+' "$llvm_hdr")"
-          wamr_slot="$(grep -oP '#define XUANSI_LITERAL_BASE_SLOT\s+\K[0-9]+' "$wamr_hdr")"
-          wamr_exec="$(grep -oP '#define XUANSI_EXEC_ENV_MODULE_INST_OFFSET\s+\K[0-9]+' "$wamr_hdr")"
+          llvm_slot="$(sed -n 's/^.*XUANSI_LITERAL_BASE_SLOT[ =]*\([0-9][0-9]*\).*$/\1/p' "$llvm_hdr" | head -1)"
+          llvm_exec="$(sed -n 's/^.*XUANSI_EXEC_ENV_MODULE_INST_OFFSET[ =]*\([0-9][0-9]*\).*$/\1/p' "$llvm_hdr" | head -1)"
+          wamr_slot="$(sed -n 's/^.*XUANSI_LITERAL_BASE_SLOT[ =]*\([0-9][0-9]*\).*$/\1/p' "$wamr_hdr" | head -1)"
+          wamr_exec="$(sed -n 's/^.*XUANSI_EXEC_ENV_MODULE_INST_OFFSET[ =]*\([0-9][0-9]*\).*$/\1/p' "$wamr_hdr" | head -1)"
           echo "llvm: slot=$llvm_slot exec_env=$llvm_exec"
           echo "wamr: slot=$wamr_slot exec_env=$wamr_exec"
           test -n "$llvm_slot" && test -n "$wamr_slot"
@@ -178,6 +179,13 @@ jobs:
         if: steps.llvm-cache.outputs.cache-hit != 'true'
         run: |
           set -eux
+          # ccache launcher on linux only (it is in the deps there and
+          # the workflow cache keys the build tree anyway; mac legs
+          # keep the plain compilers — one-shot builds)
+          launchers=""
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            launchers="-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache"
+          fi
           cmake -G Ninja -S llvm-project/llvm -B llvm-project/build \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX="$PWD/llvm-pkg" \
@@ -187,7 +195,7 @@ jobs:
             -DLLVM_TOOL_LTO_BUILD=OFF \
             -DLLVM_TOOL_REMARKS_SHLIB_BUILD=OFF \
             -DCMAKE_CXX_FLAGS="-include cstdint" \
-            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+            $launchers
           ninja -C llvm-project/build
 
       - name: build llvm-config (tool; cheap)
