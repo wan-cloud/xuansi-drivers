@@ -96,6 +96,8 @@ uint8_t *xuansi_lin_base;
 #define LIN_OUT_OFF    0x4000u             /* result marshal buffer */
 #define LIN_ARGS_OFF   0x6000u             /* reused args slot (§3.1) */
 #define LIN_IO_OFF     0x6080u             /* 4B i2c write/probe io */
+#define LIN_HEAP_OFF   0x6200u             /* bump arena (P3-T12 rider:
+                                            * alloc returns heap_buf+off) */
 void xuansi_native_init(uint8_t *base);
 #else
 #define XUANSI_IN(off) ((const uint8_t *)(uintptr_t)(off))
@@ -110,10 +112,18 @@ void xuansi_native_init(uint8_t *base);
 #ifdef XUANSI_NATIVE_TEST
 static uint32_t heap_off = 8;
 static uint8_t *args_slot;                 /* placed by xuansi_native_init() */
+static uint8_t *heap_buf;                  /* placed by xuansi_native_init() */
 static uint8_t *io_buf;                    /* 4B: write[0..1] / read[2] */
 static uint8_t *out_buf;                   /* result marshal buffer */
 #else
-static uint8_t heap_buf[HEAP_SZ] __attribute__((aligned(8), unused));
+/* P3-T12 rider (T2's routed item, hello/ledwatch/jpge's fix applied):
+ * heap_buf is REFERENCED now — the bump path returns heap_buf-based
+ * addresses, not the bare offsets 8..512 it used to hand out (linear
+ * addresses in .rodata/.data territory — and the unreferenced array
+ * was optimized away, so those offsets pointed at real module state,
+ * the register table included). No gc2145 face passes >128B args
+ * today; the loaded gun is closed anyway. */
+static uint8_t heap_buf[HEAP_SZ] __attribute__((aligned(8)));
 static uint8_t args_slot[ARGS_SLOT_SZ] __attribute__((aligned(8)));
 static uint8_t io_buf[4] __attribute__((aligned(8)));
 static uint8_t out_buf[2048] __attribute__((aligned(8)));
@@ -136,7 +146,7 @@ uint32_t xuansi_alloc(uint32_t n)
     uint32_t off = (heap_off + 7u) & ~(uint32_t)7u;
     if (off + n > HEAP_SZ) return 0;
     heap_off = off + n;
-    return off;
+    return XUANSI_OFF(heap_buf) + off;   /* P3-T12 rider: heap_buf-based */
 }
 
 XUANSI_EXPORT("xuansi_abi")
@@ -466,6 +476,7 @@ void xuansi_native_init(uint8_t *base)
     xuansi_lin_base = base;
     out_buf = base + LIN_OUT_OFF;
     args_slot = base + LIN_ARGS_OFF;
+    heap_buf = base + LIN_HEAP_OFF;
     io_buf = base + LIN_IO_OFF;
 }
 #endif

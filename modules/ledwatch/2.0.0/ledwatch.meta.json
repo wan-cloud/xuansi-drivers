@@ -28,7 +28,7 @@
   "linear_memory": {
     "initial_bytes": 720896,
     "max_bytes": 1048576,
-    "note": "11 wasm pages: CCL working set ~627KB (frame 153600 + u16 label map 153600 + parent 76804 + area 153608 + selected map 76804 + heap 8192 + result 4096) + wasm-ld 64KB stack. One ledwatch + one hello co-load fit the board's 1MB WAMR pool; two ledwatch instances do not (loader refuses out-of-memory)."
+    "note": "11 wasm pages: CCL working set ~627KB (frame 153600 + u16 label map 153600 + parent 76804 + area 153608 + selected map 76804 + heap 8192 + result 4096) + wasm-ld 64KB stack. One ledwatch + one hello co-load fit the board's 2MiB WAMR pool (B12-P2 POOL RULING measured; this note previously said 1MB — stale); two ledwatch instances do not (loader refuses out-of-memory)."
   },
   "deliverable": {
     "path": "modules/ledwatch/2.0.0/ledwatch.wasm",

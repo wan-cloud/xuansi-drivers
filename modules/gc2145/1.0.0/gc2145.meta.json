@@ -25,7 +25,7 @@
     {
       "fn": "xuansi_alloc",
       "signature": "(u32 n) -> u32",
-      "desc": "linear-memory offset for the host-written msgpack args; 0 = refusal; <=128B calls reuse one fixed slot (§3.1)"
+      "desc": "linear-memory offset for the host-written msgpack args; 0 = refusal; <=128B calls reuse one fixed slot (§3.1); larger bumps return heap_buf-based addresses (P3-T12 rider: the bare-offset era handed out .rodata-range offsets and heap_buf was optimized away)"
     },
     {
       "fn": "init",
@@ -58,8 +58,8 @@
   },
   "deliverable": {
     "path": "modules/gc2145/1.0.0/gc2145.wasm",
-    "sha256": "701236ca76f9c97fac65ce75a1717c7cf52bb18812f9ae31377c9ff0cdaf26ff",
-    "bytes": 6898
+    "sha256": "97b4770aef610c7f3fe219403929aa09379cb7e79ca89af91f642f57f3231552",
+    "bytes": 6905
   },
   "auxiliary": [
     {

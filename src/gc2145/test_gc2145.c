@@ -424,6 +424,10 @@ int main(void)
         snprintf(detail, sizeof detail, "a=%u b=%u", a, b);
         check(a != 0 && a == b, "T02 args-slot reuse (§3.1)", detail);
         check(xuansi_alloc(0) == 0, "T02b alloc(0) refused", "");
+        uint32_t c = xuansi_alloc(200);
+        snprintf(detail, sizeof detail, "c=%u want=%u", c, LIN_HEAP_OFF + 8);
+        check(c == LIN_HEAP_OFF + 8, "T02c large alloc -> heap_buf-based bump "
+              "(P3-T12 rider: no bare .rodata-range offsets)", detail);
     }
 
     /* T03: info before any init — honest empty state */

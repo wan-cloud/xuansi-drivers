@@ -68,8 +68,8 @@
       "files": [
         {
           "path": "modules/gc2145/1.0.0/gc2145.wasm",
-          "sha256": "701236ca76f9c97fac65ce75a1717c7cf52bb18812f9ae31377c9ff0cdaf26ff",
-          "bytes": 6898
+          "sha256": "97b4770aef610c7f3fe219403929aa09379cb7e79ca89af91f642f57f3231552",
+          "bytes": 6905
         }
       ],
       "fw_compat": {
