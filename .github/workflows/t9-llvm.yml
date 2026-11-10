@@ -116,7 +116,7 @@ jobs:
           test -d llvm-pkg/lib/cmake/llvm
           ls llvm-pkg/lib/libLLVM*.a >/dev/null
           test -x llvm-pkg/bin/llvm-tblgen
-          cp llvm/build/bin/llvm-config llvm-pkg/bin/llvm-config
+          cp llvm-project/build/bin/llvm-config llvm-pkg/bin/llvm-config
           llvm_version="$(llvm-pkg/bin/llvm-config --version)"
           python3 - <<'EOF'
           import re, sys
