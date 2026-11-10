@@ -524,11 +524,17 @@ same tools through their agent):
    bench.wasm.call("mymod", "echo", {1, 2, 3})
    ```
 
-`.aot` today: the toolchain's aot domain is empty in P1 — `.aot` is
-refused for every fw (the current board stack cannot execute it), and
-`wamrc_path` is the explicit experimental developer lane whose build
-still stops at an honest not-yet refusal. When the A1 runtime lands,
-the index's aot domain opens with zero module-side changes.
+`.aot` today: the toolchain's aot domain is OPEN (`fw_compat.aot
+">=0.3.0"`, P3-T7) — the stock wamrc above compiles `.aot` that fw
+0.3.0+ loads into fw-INTERNAL SRAM within the board's advertised
+`aot_exec_budget_bytes` ceiling (an over-budget `.aot` is honestly
+refused at load, never silently swapped for the `.wasm`). Through
+`xuansi_wasm_build`, `wamrc_path` is that lane's knob: the build
+compiles the `.wasm` one step further with the given wamrc (this
+repo's frozen recipe: `--target=xtensa --cpu=esp32s3
+--size-level=3`) and stores `drivers/<name>@<version>.aot` as a
+`wasm-dev` artifact. PSRAM-sized `.aot` (the surgery toolchain)
+arrives with toolchain-v3.
 
 ### Manual fallback (documentation-level)
 
