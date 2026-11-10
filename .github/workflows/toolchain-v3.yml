@@ -1,0 +1,363 @@
+name: toolchain-v3
+
+# P3-T12: builds and publishes the SURGERY toolchain generation
+# (toolchain-v3, kind xuansi-surgery-wamrc) — wamrc from the WAN-CLOUD
+# WAMR FORK (xuansi/base-2.4.0) linked against the WAN-CLOUD LLVM FORK
+# surgery branch (xuansi/a3-surgery). Sister of toolchain.yml (which
+# publishes the stock toolchain-v2 from upstream pins): same release
+# discipline, fork lineage. The LLVM dev package is built DIRECTLY in
+# this workflow (the t10-wamr llvm-job recipe verbatim — no llvm-dev
+# release exists at the surgery sha) and attached beside the wamrc
+# asset, so the toolchain-v3 release carries the whole pin chain:
+#
+#   llvm fork sha (resolved) <-> llvm-dev asset sha <-> wamrc manifest
+#   <-> wamrc asset sha <-> toolchain-index.json generation
+#
+# Manual only. The `platforms` input defaults EMPTY on purpose (the
+# toolchain.yml discipline): an unthinking dispatch must go red, never
+# clobber the published assets (--clobber) of a pin it did not name.
+# A deliberate full rebuild is the pin-change flow (tag bump) and
+# passes all three keys explicitly:
+#   linux-x64    ubuntu-latest    (mandatory leg — the index pins it)
+#   macos-x64    macos-15-intel
+#   macos-arm64  macos-15
+# win-x64: no leg (honest null in the index — same as v2; the win
+# best-effort leg failed its MSVC probe there).
+#
+# Surgery smoke gate (every leg, before any upload): the freshly built
+# wamrc must compile the repo's own hello.wasm into a SURGERY container
+# — banner "xuansi surgery mode: ON", TEXT literal_size == 0, the
+# xuansi.literal pool CUSTOM section present before RELOCATION. A
+# wamrc that silently defaulted to stock codegen must never ship as
+# toolchain-v3 (the stock wamrc is toolchain-v2's asset).
+
+on:
+  workflow_dispatch:
+    inputs:
+      llvm_ref:
+        description: "wan-cloud/llvm-project ref to build (branch or sha)"
+        required: true
+        default: "xuansi/a3-surgery"
+      wamr_ref:
+        description: "wan-cloud/wasm-micro-runtime ref to build wamrc from (the fork)"
+        required: true
+        default: "xuansi/base-2.4.0"
+      platforms:
+        description: "platform keys to build, comma-separated (subset of: linux-x64,macos-x64,macos-arm64). Defaults to EMPTY = red 'no platform selected': dispatch must name its legs; a deliberate full rebuild (pin change + tag bump) passes all three."
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: write   # release create/upload
+
+jobs:
+  # picks the matrix legs from the `platforms` input (toolchain.yml's
+  # picker verbatim — jobs.<id>.if cannot see the matrix context).
+  legs:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.pick.outputs.matrix }}
+    env:
+      ALL_PLATFORMS: linux-x64,macos-x64,macos-arm64
+      WANT: ${{ inputs.platforms }}
+      LEGS_JSON: |
+        {"include": [
+          {"platform": "linux-x64", "runner": "ubuntu-latest"},
+          {"platform": "macos-x64", "runner": "macos-15-intel"},
+          {"platform": "macos-arm64", "runner": "macos-15"}
+        ]}
+    steps:
+      - id: pick
+        run: |
+          set -eux
+          matrix="$(python3 -c '
+          import json, os, sys
+          legs = json.loads(os.environ["LEGS_JSON"])["include"]
+          want = [p.strip() for p in os.environ.get("WANT", "").split(",") if p.strip()]
+          known = os.environ["ALL_PLATFORMS"].split(",")
+          for p in want:
+              if p not in known:
+                  sys.exit(f"unknown platform {p!r} (known: {known})")
+          picked = [l for l in legs if l["platform"] in want]
+          if not picked:
+              sys.exit("no platform selected: the platforms input defaults to empty ON PURPOSE (an unthinking full-matrix dispatch would clobber the published toolchain-v3 assets and stale every index pin) - name the legs explicitly; a deliberate full rebuild is the pin-change flow (tag bump) and passes all keys")
+          print(json.dumps({"include": picked}, separators=(",", ":")))
+          ')"
+          echo "picked: $matrix"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: [legs]
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.legs.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 150
+    env:
+      LLVM_REF: ${{ inputs.llvm_ref }}
+      WAMR_REF: ${{ inputs.wamr_ref }}
+      PLATFORM: ${{ matrix.platform }}
+      WASI_SDK_VERSION: "24.0"
+      WASI_SDK_SHA256: c6c38aab56e5de88adf6c1ebc9c3ae8da72f88ec2b656fb024eda8d4167a0bc5
+
+    steps:
+      - uses: actions/checkout@v4   # the repo's own modules for the smoke gate
+
+      - name: fetch the llvm-project fork at the requested ref
+        run: |
+          set -eux
+          git init -q llvm-project
+          git -C llvm-project remote add origin https://github.com/wan-cloud/llvm-project.git
+          git -C llvm-project fetch --depth 1 origin "$LLVM_REF"
+          git -C llvm-project checkout FETCH_HEAD
+          git -C llvm-project log -1 --format='llvm at %H %ci %s'
+
+      - name: fetch the WAMR fork (constant mirror + wamrc source)
+        run: |
+          set -eux
+          git init -q wamr
+          git -C wamr remote add origin https://github.com/wan-cloud/wasm-micro-runtime.git
+          git -C wamr fetch --depth 1 origin "$WAMR_REF"
+          git -C wamr checkout FETCH_HEAD
+          git -C wamr log -1 --format='wamr at %H %ci %s'
+
+      # T9-designed backstop, the t10-wamr first step: the slot
+      # constants live physically in both repos; any drift is a hard
+      # red before the ~40-minute LLVM build.
+      - name: constant gate (both repos must agree)
+        run: |
+          set -eux
+          llvm_hdr="llvm-project/llvm/lib/Target/Xtensa/XtensaSubtarget.h"
+          wamr_hdr="wamr/core/iwasm/aot/xuansi_aot.h"
+          test -f "$llvm_hdr" && test -f "$wamr_hdr"
+          llvm_slot="$(grep -oP 'XUANSI_LITERAL_BASE_SLOT\s*=\s*\K[0-9]+' "$llvm_hdr")"
+          llvm_exec="$(grep -oP 'XUANSI_EXEC_ENV_MODULE_INST_OFFSET\s*=\s*\K[0-9]+' "$llvm_hdr")"
+          wamr_slot="$(grep -oP '#define XUANSI_LITERAL_BASE_SLOT\s+\K[0-9]+' "$wamr_hdr")"
+          wamr_exec="$(grep -oP '#define XUANSI_EXEC_ENV_MODULE_INST_OFFSET\s+\K[0-9]+' "$wamr_hdr")"
+          echo "llvm: slot=$llvm_slot exec_env=$llvm_exec"
+          echo "wamr: slot=$wamr_slot exec_env=$wamr_exec"
+          test -n "$llvm_slot" && test -n "$wamr_slot"
+          test -n "$llvm_exec" && test -n "$wamr_exec"
+          test "$llvm_slot" = "$wamr_slot"
+          test "$llvm_exec" = "$wamr_exec"
+          echo "CONSTANT GATE PASS (slot=$llvm_slot exec_env=$llvm_exec)"
+
+      - name: resolve the source shas
+        id: src
+        run: |
+          llvm_sha="$(git -C llvm-project rev-parse HEAD)"
+          wamr_sha="$(git -C wamr rev-parse HEAD)"
+          echo "llvm_sha=$llvm_sha" >> "$GITHUB_OUTPUT"
+          echo "wamr_sha=$wamr_sha" >> "$GITHUB_OUTPUT"
+          echo "llvm8=${llvm_sha:0:8}" >> "$GITHUB_OUTPUT"
+
+      - name: restore the LLVM build tree (keyed on the source sha + platform)
+        id: llvm-cache
+        uses: actions/cache@v4
+        with:
+          path: llvm-project/build
+          key: t12-llvm-build-${{ steps.src.outputs.llvm_sha }}-notools-${{ matrix.platform }}
+
+      # t9-llvm's mtime trap: a cache hit restores the BUILD tree but
+      # the fresh source fetch rewrote every input newer — backdate the
+      # sources so the restored outputs stay to date.
+      - name: backdate sources after a cache hit (keep outputs to date)
+        if: steps.llvm-cache.outputs.cache-hit == 'true'
+        run: find llvm-project -path llvm-project/build -prune -o -type f -exec touch -d '2020-01-01' {} +
+
+      - name: deps (linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ninja-build ccache zstd
+
+      - name: deps (macos)
+        if: runner.os == 'macOS'
+        run: brew install --quiet ninja zstd
+
+      - name: configure + build LLVM (only on cache miss)
+        if: steps.llvm-cache.outputs.cache-hit != 'true'
+        run: |
+          set -eux
+          cmake -G Ninja -S llvm-project/llvm -B llvm-project/build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$PWD/llvm-pkg" \
+            -DLLVM_TARGETS_TO_BUILD="AArch64;ARM;Mips;RISCV;X86" \
+            -DLLVM_EXPERIMENTAL_TARGETS_TO_BUILD=Xtensa \
+            -DLLVM_BUILD_TOOLS=OFF \
+            -DLLVM_TOOL_LTO_BUILD=OFF \
+            -DLLVM_TOOL_REMARKS_SHLIB_BUILD=OFF \
+            -DCMAKE_CXX_FLAGS="-include cstdint" \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          ninja -C llvm-project/build
+
+      - name: build llvm-config (tool; cheap)
+        run: ninja -C llvm-project/build llvm-config
+
+      - name: save the LLVM build tree
+        if: steps.llvm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: llvm-project/build
+          key: t12-llvm-build-${{ steps.src.outputs.llvm_sha }}-notools-${{ matrix.platform }}
+
+      # t10-wamr's packaging step verbatim: install, completeness-gate
+      # the cmake exports, tar the dev package with its manifest.
+      - name: install LLVM into the package tree + completeness gate + package
+        run: |
+          set -eux
+          test -f llvm-project/build/build.ninja
+          ninja -C llvm-project/build install
+          test -d llvm-pkg/lib/cmake/llvm
+          ls llvm-pkg/lib/libLLVM*.a >/dev/null
+          test -x llvm-pkg/bin/llvm-tblgen
+          cp llvm-project/build/bin/llvm-config llvm-pkg/bin/llvm-config
+          llvm_version="$(llvm-pkg/bin/llvm-config --version)"
+          python3 - <<'EOF'
+          import re, sys
+          from pathlib import Path
+          prefix = Path("llvm-pkg")
+          refs = set()
+          for f in (prefix / "lib/cmake/llvm").glob("LLVMExports*.cmake"):
+              refs |= set(re.findall(r'\$\{_IMPORT_PREFIX\}/(\S+?)(?=["\s])', f.read_text()))
+          missing = sorted(r for r in refs if not (prefix / r).exists())
+          if missing:
+              sys.exit(f"exports reference files missing from the package: {missing}")
+          print(f"exports completeness: OK ({len(refs)} referenced files present)")
+          EOF
+          mkdir -p dist
+          llvm_asset="dist/llvm-xtensa-dev-${{ steps.src.outputs.llvm8 }}-$PLATFORM.tar.zst"
+          ( cd llvm-pkg && tar --zstd -cf "../$llvm_asset" \
+              bin/llvm-config* bin/llvm-tblgen lib/libLLVM*.a \
+              lib/cmake/llvm include/llvm include/llvm-c )
+          ( cd dist \
+              && { command -v sha256sum >/dev/null 2>&1 \
+                   && sha256sum "$(basename "$llvm_asset")" \
+                   || shasum -a 256 "$(basename "$llvm_asset")"; } \
+              | tee llvm-dev.sha256 )
+          cat dist/llvm-dev.sha256
+          llvm_dev_sha="$(cut -d' ' -f1 dist/llvm-dev.sha256)"
+          printf '{\n "source_sha": "%s",\n "built_from_ref": "%s",\n "llvm_version": "%s",\n "built": "%s"\n}\n' \
+            "${{ steps.src.outputs.llvm_sha }}" "$LLVM_REF" "$llvm_version" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            > "dist/llvm-dev-manifest-$PLATFORM.json"
+          cat "dist/llvm-dev-manifest-$PLATFORM.json"
+          echo "llvm_dev_sha=$llvm_dev_sha" >> "$GITHUB_ENV"
+          echo "llvm_asset_name=$(basename "$llvm_asset")" >> "$GITHUB_ENV"
+          echo "llvm_manifest_name=llvm-dev-manifest-$PLATFORM.json" >> "$GITHUB_ENV"
+
+      # t10-wamr's wamrc build verbatim: the FORK wamrc against the
+      # dev package (CUSTOM_LLVM, minutes).
+      - name: build wamrc from the FORK (CUSTOM_LLVM)
+        run: |
+          set -eux
+          cmake -G Ninja -S wamr/wamr-compiler -B wamr/wamr-compiler/build \
+            -DCMAKE_BUILD_TYPE= \
+            -DCMAKE_CXX_FLAGS="-include cstdint" \
+            -DWAMR_BUILD_WITH_CUSTOM_LLVM=1 \
+            -DLLVM_DIR="$GITHUB_WORKSPACE/llvm-pkg/lib/cmake/llvm"
+          ninja -C wamr/wamr-compiler/build
+          cp wamr/wamr-compiler/build/wamrc wamrc-v3
+          ./wamrc-v3 --version
+
+      # The pairing gate: this wamrc must be a SURGERY wamrc. Compiles
+      # the repo's own hello.wasm (frozen recipe) and asserts the
+      # surgery container shape — a stock-defaulting binary must never
+      # ship as toolchain-v3 (that is toolchain-v2's lane).
+      - name: surgery smoke gate (container shape, not just the banner)
+        run: |
+          set -eux
+          ./wamrc-v3 --target=xtensa --cpu=esp32s3 --size-level=3 \
+            -o hello-v3-smoke.aot modules/hello/1.0.0/hello.wasm 2>&1 | tee smoke.log
+          grep -q "xuansi surgery mode: ON" smoke.log
+          python3 - <<'EOF'
+          import struct, sys
+          buf = open("hello-v3-smoke.aot", "rb").read()
+          assert struct.unpack("<I", buf[0:4])[0] == 0x746F6100, "not an \\0aot container"
+          p, lit_sz, pool_at, seen_reloc = 8, None, None, False
+          while p + 8 <= len(buf):
+              p = (p + 3) & ~3
+              if p + 8 > len(buf):
+                  break
+              t, s = struct.unpack("<II", buf[p:p+8])
+              body = p + 8
+              if t == 2:
+                  lit_sz = struct.unpack("<I", buf[body:body+4])[0]
+              elif t == 5:
+                  seen_reloc = True
+              elif t == 100 and not seen_reloc:
+                  sub = struct.unpack("<I", buf[body:body+4])[0]
+                  if sub == 0 and s >= 6:
+                      nl = struct.unpack("<H", buf[body+4:body+6])[0]
+                      name = buf[body+6:body+6+nl][:-1].decode(errors="replace")
+                      if name == "xuansi.literal":
+                          pool_at = body
+              p = body + s
+          if lit_sz != 0:
+              sys.exit(f"smoke gate: surgery TEXT literal_size == {lit_sz}, want 0 (stock codegen?)")
+          if pool_at is None:
+              sys.exit("smoke gate: no xuansi.literal pool section before RELOCATION (stock codegen?)")
+          print(f"SMOKE GATE PASS (surgery container: literal_size=0, pool present)")
+          EOF
+
+      - name: package wamrc asset + manifest
+        run: |
+          set -eux
+          test -x wamrc-v3
+          wamrc_asset="wamrc-2.4.0-xuansi-surgery-${{ steps.src.outputs.llvm8 }}-$PLATFORM.tar.gz"
+          # daemon convention (toolchain.yml's shape): the tarball's
+          # single member is the binary itself, named wamrc
+          rm -rf wamrc-stage && mkdir wamrc-stage && cp wamrc-v3 wamrc-stage/wamrc
+          tar -czf "$wamrc_asset" -C wamrc-stage wamrc
+          file_sha() {
+            if command -v sha256sum >/dev/null 2>&1; then
+              sha256sum "$1" | cut -d' ' -f1
+            else
+              shasum -a 256 "$1" | cut -d' ' -f1   # macOS runners
+            fi
+          }
+          wamrc_sha=$(file_sha wamrc-v3)
+          asset_sha=$(file_sha "$wamrc_asset")
+          case "$RUNNER_OS" in
+            macOS) runner_image="$(sw_vers -productName) $(sw_vers -productVersion) ($(uname -m))" ;;
+            *)     runner_image="$(. /etc/os-release && echo "$PRETTY_NAME")" ;;
+          esac
+          case "$PLATFORM" in
+            linux-x64)    manifest_name="manifest.json" ;;
+            macos-x64)    manifest_name="manifest-macos-x64.json" ;;
+            macos-arm64)  manifest_name="manifest-macos-arm64.json" ;;
+            *) exit 1 ;;
+          esac
+          cat > "$manifest_name" <<EOF
+          {
+            "platform": "$PLATFORM",
+            "name": "$wamrc_asset",
+            "kind": "xuansi-surgery-wamrc",
+            "tier": "fork-surgery",
+            "xuansi_surgery": true,
+            "wamrc_sha256": "$wamrc_sha",
+            "asset_sha256": "$asset_sha",
+            "esp_llvm_sha": "${{ steps.src.outputs.llvm_sha }}",
+            "wamr_sha": "${{ steps.src.outputs.wamr_sha }}",
+            "llvm_dev_asset": "$llvm_asset_name",
+            "llvm_dev_sha256": "$llvm_dev_sha",
+            "wasi_sdk_version": "$WASI_SDK_VERSION",
+            "wasi_sdk_tarball_sha256": "$WASI_SDK_SHA256",
+            "built": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "runner_os": "$RUNNER_OS",
+            "runner_image": "$runner_image"
+          }
+          EOF
+          cat "$manifest_name"
+          echo "wamrc_asset=$wamrc_asset" >> "$GITHUB_ENV"
+          echo "manifest_name=$manifest_name" >> "$GITHUB_ENV"
+
+      - name: attach to the toolchain-v3 release (create if absent)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eux
+          gh release view toolchain-v3 --repo "$GITHUB_REPOSITORY" \
+            || gh release create toolchain-v3 --repo "$GITHUB_REPOSITORY" \
+                 --title "toolchain-v3: xuansi surgery wamrc (WAMR fork xuansi/base-2.4.0 + wan-cloud llvm-fork xuansi/a3-surgery)" \
+                 --notes "Built by the toolchain-v3 workflow: the wan-cloud WAMR fork (xuansi/base-2.4.0) wamrc linked against the wan-cloud llvm-project surgery branch (xuansi/a3-surgery) dev package — the SURGERY generation (kind xuansi-surgery-wamrc): .aot output carries the split literal pool (xuansi.literal CUSTOM section, literal_size=0) that fw 0.3.0+ places in PSRAM exec. Pairs with wasi-sdk $WASI_SDK_VERSION. Per-platform manifest carries the resolved source shas (esp_llvm_sha / wamr_sha) — the three-way pin chain against toolchain-index.json. This upload: $wamrc_asset + $llvm_asset_name (linux legs build the llvm-dev package in-workflow; there is no llvm-dev release at the surgery sha)." \
+            || true   # matrix legs race the create; the loser's create error is fine
+          gh release upload toolchain-v3 "$wamrc_asset" "$manifest_name" "$llvm_asset_name" "dist/$llvm_manifest_name" --clobber --repo "$GITHUB_REPOSITORY"
