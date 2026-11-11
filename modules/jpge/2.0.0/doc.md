@@ -52,11 +52,14 @@ survived the wire. Host refusals (camera off, frame over cap) raise
 - `mcu_pool_highwater_vga_bytes` — 30720 — asserted natively
 - `interp_vga_q80_ms` — over 15000 — the VM-task watchdog kills a single wasm call > 5s: VGA interp encodes WILL trip it (measured ~15s+); interp-safe class = QVGA q<=60 (~3.1-3.9s)
 - `aot_vga_q80_ms` — 1229 — surgery-.aot lane median, n=3, 2026-11-11 P3 board run on the pre-recarve twin (q60: 1179ms; same TEXT/pool sizes) — the recipe's VGA shape rides this lane
-- `fw_compat: {wasm >= 0.5.0}` — 2.0.0 is the B15 recarve: the declaration returns to 1 and the memory face freezes initial == max; the cam-family import face IS the recarved unified table (the old abi=2 additions folded in)
 - `max_memory_bytes` — 917504 — the recarved ABI 1 freeze (initial == max; the 1.0.0 artifact carried the pre-recarve 1MB max and is refused by the fw 0.5.0 gate)
 
 ## Notes
 
+- `fw_compat: {wasm >= 0.5.0}` — 2.0.0 is the B15 recarve: the
+  declaration returns to 1 and the memory face freezes initial ==
+  max; the cam-family import face IS the recarved unified table (the
+  old abi=2 additions folded in)
 - Source layout differs from the pure-C modules by exactly one thing:
   `src/jpge/jpge.cpp` (the vendored C++ encoder core,
   `-fno-rtti -fno-exceptions` — the one sanctioned C-flag-set

@@ -13,7 +13,7 @@
     {
       "fn": "xuansi_abi",
       "signature": "() -> u32",
-      "desc": "abi version gate; returns 2 — the module imports the abi=2 cam family only (cam_frame_get carries w/h out with the frame; zero retired camera_* names in the import table)"
+      "desc": "abi version gate; returns 1 — the RECARVED ABI 1 (B15, 2026-11-11): the unified host table + the initial==max memory freeze (the cam-family import face — cam_frame_get carries w/h out with the frame — is the old abi=2 addition set folded into the unified table; zero retired camera_* names in the import table)"
     },
     {
       "fn": "xuansi_alloc",
@@ -61,7 +61,7 @@
   "linear_memory": {
     "initial_bytes": 720896,
     "max_bytes": 720896,
-    "note": "11 wasm pages: CCL working set ~627KB (frame 153600 + u16 label map 153600 + parent 76804 + area 153608 + selected map 76804 + heap 8192 + result 4096) + wasm-ld 64KB stack. One ledwatch + one hello co-load fit the board's 2MiB WAMR pool (B12-P2 POOL RULING measured; this note previously said 1MB — stale); two ledwatch instances do not (loader refuses out-of-memory)."
+    "note": "11 wasm pages: CCL working set ~627KB (frame 153600 + u16 label map 153600 + parent 76804 + area 153608 + selected map 76804 + heap 8192 + result 4096) + wasm-ld 64KB stack. Since B15 the honest bound is the admission account's SUM against the 2,097,152B budget with the arithmetic in the refusal: ledwatch + hello = 983,040B fits with room; the pre-B15 'two ledwatch instances refused out-of-memory' observation was the old pool bookkeeping — under the account two ledwatch (1,441,792B) pass the pre-check and the loader's own allocation remains the last-line truth (never design against the pool's last byte; doc.md's coload_note carries the working sets)."
   },
   "deliverable": {
     "path": "modules/ledwatch/3.0.0/ledwatch.wasm",

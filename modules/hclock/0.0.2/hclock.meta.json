@@ -72,7 +72,7 @@
       "path": "modules/hclock/0.0.2/hclock.aot",
       "sha256": "4ea39b3a804ea132654e485e3b424020f74310504cc6dd7d77f80f0ddb92da5a",
       "bytes": 1284,
-      "note": "toolchain-v3 surgery container (the frozen recipe --target=xtensa --cpu=esp32s3 --size-level=3). STAGED (git-ignored staging/, W2-T3 2026-11-12): NOT in index.json — W3-T2 promotes it with the six-module republish. The .aot lane is inherently initial==max (wamrc collapses the memory face to one fixed page)."
+      "note": "toolchain-v3 surgery container (the frozen recipe --target=xtensa --cpu=esp32s3 --size-level=3). PUBLISHED with the B15 W3-T2 six-module republish (index.json entry — hclock's first official release; the products are byte-for-byte the W2-T3 staged builds, board-verified 33/33 on fw 0.5.0). The .aot lane is inherently initial==max (wamrc collapses the memory face to one fixed page)."
     }
   },
   "toolchain": {

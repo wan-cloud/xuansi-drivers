@@ -21,7 +21,7 @@
     {
       "fn": "xuansi_abi",
       "signature": "() -> u32",
-      "desc": "abi version gate; returns 2 — the loader accepts {1,2} and this module imports the abi=2 i2c/cam families only (no retired camera_* names)"
+      "desc": "abi version gate; returns 1 — the RECARVED ABI 1 (B15, 2026-11-11): the unified host table + the initial==max memory freeze (the i2c/cam family imports are the old abi=2 additions folded into the unified table; no retired camera_* names)"
     },
     {
       "fn": "xuansi_alloc",

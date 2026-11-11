@@ -15,7 +15,7 @@
     {
       "fn": "xuansi_abi",
       "signature": "() -> u32",
-      "desc": "abi version gate; returns 2 — the module imports the abi=2 cam family only (cam_frame_get carries w/h out with the frame; zero retired camera_* names in the import table)"
+      "desc": "abi version gate; returns 1 — the RECARVED ABI 1 (B15, 2026-11-11): the unified host table + the initial==max memory freeze (the cam-family import face — cam_frame_get carries w/h out with the frame — is the old abi=2 addition set folded into the unified table; zero retired camera_* names in the import table)"
     },
     {
       "fn": "xuansi_alloc",
