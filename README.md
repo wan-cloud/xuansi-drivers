@@ -86,10 +86,12 @@ module's `meta.json` (`deliverable` + `aot.esp32s3`). CI rebuilds both
 from the pinned toolchain and hard-compares — the single-source lock:
 the release-asset wamrc rebuilding the same `.wasm` must reproduce the
 committed `.aot` bit-for-bit. The loader prefers the `.aot` when both
-are on the board (kind-aware since P3-T11: SURGERY → PSRAM exec,
-STOCK → the internal-SRAM lane); an over-budget STOCK `.aot` is
-honestly refused at load with the reason and the fix in the error —
-never silently swapped for the `.wasm`.
+are on the board (kind-aware since P3-T11: SURGERY → PSRAM exec).
+The STOCK `.aot` lane (toolchain-v2 → fw-internal SRAM, within the
+`aot_exec_budget_bytes` gate) is fw 0.3.x-only — retired in fw 0.4.0
+(the internal-SRAM exec lane is gone): a stock `.aot` is honestly
+refused at load with the reason and the fix in the error — never
+silently swapped for the `.wasm`.
 
 Two lane notes carried from the toolchain surgery tasks (T9/T10):
 
@@ -104,7 +106,8 @@ Two lane notes carried from the toolchain surgery tasks (T9/T10):
   v3 wamrc ↔ fork LLVM (`xuansi/a3-surgery`) ↔ WAMR fork
   (`xuansi/base-2.4.0`) ↔ fw >=0.3.0 (the kind-aware loader). Using
   any stock element against that chain (an old wamrc, an old fw)
-  either honestly refuses or falls back to the narrower lane — there
+  either honestly refuses or falls back to the narrower stock lane
+  (fw 0.3.x only — fw 0.4.0 retired it and refuses instead) — there
   is no silent mixing. `--disable-xuansi-surgery` on the fork wamrc
   rebuilds the stock lane explicitly.
 
@@ -480,7 +483,7 @@ pin).
 |---|---|
 | wasi-sdk | **24.0** (LLVM 18.1.2) — [release tarball](https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-24/wasi-sdk-24.0-x86_64-linux.tar.gz), sha256 `c6c38aab56e5de88adf6c1ebc9c3ae8da72f88ec2b656fb024eda8d4167a0bc5` |
 | wamrc (**toolchain-v3**, the default/latest) | the **surgery wamrc**: WAMR fork [wan-cloud/wasm-micro-runtime](https://github.com/wan-cloud/wasm-micro-runtime) `xuansi/base-2.4.0` (commit `17036fa0…`) built against the LLVM fork [wan-cloud/llvm-project](https://github.com/wan-cloud/llvm-project) `xuansi/a3-surgery` (commit `cf84bd31…`) — kind `xuansi-surgery-wamrc`; its `.aot` is the PSRAM-exec deliverable lane |
-| wamrc (toolchain-v2, kept) | **WAMR-2.4.0** (tag `WAMR-2.4.0`, commit `47c7c85a…`) built from source against [espressif/llvm-project](https://github.com/espressif/llvm-project) `xtensa_release_18.1.2` (commit `344b928e…`) — the stock wamrc; its `.aot` is the fw-internal-SRAM lane (`fw_compat.aot ">=0.3.0"`, within `caps aot_exec_budget_bytes`) |
+| wamrc (toolchain-v2, kept) | **WAMR-2.4.0** (tag `WAMR-2.4.0`, commit `47c7c85a…`) built from source against [espressif/llvm-project](https://github.com/espressif/llvm-project) `xtensa_release_18.1.2` (commit `344b928e…`) — the stock wamrc, kept for the wasm track; its `.aot` lane is retired (`fw_compat.aot ">=0.3.0 <0.4.0"` — the fw-internal-SRAM lane loads on fw 0.3.x only; fw 0.4.0+ refuses, rebuild via toolchain-v3 or push the `.wasm`) |
 
 The machine-readable pin is [`toolchain-index.json`](toolchain-index.json)
 (structure-checked by `tools/verify_tcindex.py`) — the pinned source the
@@ -566,18 +569,22 @@ same tools through their agent):
    bench.wasm.call("mymod", "echo", {1, 2, 3})
    ```
 
-`.aot` lanes (dual since P3-T12): `fw_compat.aot ">=0.3.0"` covers
-BOTH generations. **toolchain-v3** (the default) is the surgery wamrc —
+`.aot` lanes (dual since P3-T12): the generations' `fw_compat.aot`
+domains diverge at fw 0.4.0 — v3 `">=0.3.0"`, v2 `">=0.3.0 <0.4.0"`
+(retired). **toolchain-v3** (the default) is the surgery wamrc —
 `xuansi_wasm_build`'s `aot: true` knob compiles the freshly-built
 `.wasm` one step further with the cache's v3 wamrc (this repo's frozen
 recipe: `--target=xtensa --cpu=esp32s3 --size-level=3`) and stores
 `drivers/<name>@<version>.aot` (manifest kind `wasm` — the
 cache-paired build): the split-literal-pool container fw 0.3.0+ places
-in **PSRAM exec**. **toolchain-v2**'s stock wamrc compiles the narrower
-fw-INTERNAL SRAM lane (within the board's advertised
-`aot_exec_budget_bytes` ceiling; an over-budget `.aot` is honestly
-refused at load, never silently swapped for the `.wasm`) — reachable
-through the `wamrc_path` dev override (manifest kind `wasm-dev`).
+in **PSRAM exec**. **toolchain-v2**'s stock wamrc compiled the
+narrower fw-INTERNAL SRAM lane (within the board's advertised
+`aot_exec_budget_bytes` ceiling; still reachable through the
+`wamrc_path` dev override, manifest kind `wasm-dev`) — fw 0.3.x only:
+fw 0.4.0+ honestly refuses a stock `.aot` at load (rebuild via
+toolchain-v3 or push the `.wasm` single artifact), never silently
+swapped for the `.wasm`. v2 itself stays current for the wasm track
+(`fw_compat.wasm ">=0.2.0"` unchanged).
 
 ### Manual fallback (documentation-level)
 
