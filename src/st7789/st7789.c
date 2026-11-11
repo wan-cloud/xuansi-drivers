@@ -98,7 +98,8 @@
  *
  * Linear memory: fb 115,200 + stage 4,096 + out 2,048 + heap 8,192 +
  * args slot 128 + cmd 8 ~= 132KB + wasm-ld 64KB stack -> the frozen
- * default 262,144B initial (4 pages, max 1MB) — hello's budget class.
+ * default 262,144B initial (4 pages; the B15 ABI 1 freeze pins
+ * max == initial) — hello's budget class.
  * The external blit window [statics_end(), 146,944] sits above every
  * static and spans the (dead inter-call) stack: statics ~131KB + frame
  * 115.2KB fits inside 262,144 with ~16KB of legal floor headroom. */
@@ -116,9 +117,9 @@
  * the linear-memory freeze: initial == max (the static-footprint
  * admission contract), i.e. build.sh --next pins
  * --initial-memory=262144 --max-memory=262144 (the legacy published
- * artifact carries the pre-recarve max=1MB and is honestly refused by
- * the fw 0.5.0-era initial==max gate). The staged recarved products
- * live in staging/ (W2-T3, 2026-11-12) — published at W3-T2. */
+ * artifact carried the pre-recarve max=1MB and is honestly refused by
+ * the fw 0.5.0-era initial==max gate). The recarved products are the
+ * published ones since the W3-T2 wave-3 republish. */
 #ifndef XUANSI_ABI_OVERRIDE
 #define XUANSI_ABI_OVERRIDE XUANSI_ABI
 #endif

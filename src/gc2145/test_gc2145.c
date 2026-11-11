@@ -416,7 +416,7 @@ int main(void)
     host_reset();
 
     /* T01: abi marker — the loader's instantiate gate reads this */
-    check(xuansi_abi() == 2, "T01 xuansi_abi()==2 (abi=2 module)", "");
+    check(xuansi_abi() == 1, "T01 xuansi_abi()==1 (the B15 recarve; was 2 pre-recarve)", "");
 
     /* T02: args slot discipline (§3.1: <=128B allocs reuse one slot) */
     {

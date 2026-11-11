@@ -2,9 +2,9 @@
   "name": "ledwatch",
   "kind": "algorithm",
   "release": "production",
-  "version": "2.0.0",
-  "abi": 2,
-  "src_commit": "234d7ccae4a30402a7346c6ab8592d16e45a150e",
+  "version": "3.0.0",
+  "abi": 1,
+  "src_commit": "B15-W3-T2 flip (this commit) — the exact source this artifact was built from; hash pinned in the immediate follow-up commit",
   "src": "src/ledwatch/ledwatch.c",
   "imports": [
     "xuansi.cam_frame_get"
@@ -41,14 +41,14 @@
       "initial_memory_bytes": 720896,
       "aot_text_bytes": 11520,
       "aot_pool_bytes": 244,
-      "max_memory_bytes": 1048576,
-      "coload_note": "co-loads with gc2145 + jpge + st7789 in the 2MB pool on the board (measured stable across both load orders + unload/reload cycles, 2026-11-09)"
+      "max_memory_bytes": 720896,
+      "coload_note": "the 2026-11-09 board measured gc2145 + jpge + ledwatch + st7789 co-resident in the 2MB pool (pre-admission-era bookkeeping); under the B15 admission account that four-way set sums to 2,162,688B > the 2,097,152B budget and is honestly refused with the arithmetic"
     }
   },
   "footprint": {
     "wasm": {
       "initial_bytes": 720896,
-      "max_bytes": 1048576
+      "max_bytes": 720896
     },
     "aot": {
       "esp32s3": {
@@ -60,24 +60,24 @@
   },
   "linear_memory": {
     "initial_bytes": 720896,
-    "max_bytes": 1048576,
+    "max_bytes": 720896,
     "note": "11 wasm pages: CCL working set ~627KB (frame 153600 + u16 label map 153600 + parent 76804 + area 153608 + selected map 76804 + heap 8192 + result 4096) + wasm-ld 64KB stack. One ledwatch + one hello co-load fit the board's 2MiB WAMR pool (B12-P2 POOL RULING measured; this note previously said 1MB — stale); two ledwatch instances do not (loader refuses out-of-memory)."
   },
   "deliverable": {
-    "path": "modules/ledwatch/2.0.0/ledwatch.wasm",
-    "sha256": "774df0cf27c06f297bbe7cae49379b2bfc54a2ad150e3e954c6cfacea4d056f1",
+    "path": "modules/ledwatch/3.0.0/ledwatch.wasm",
+    "sha256": "ebe70c1997d9706872f2f32f09dcfc871ac1a45a192efd7b0ff9f8bb32b06f46",
     "bytes": 7537
   },
   "aot": {
     "esp32s3": {
-      "path": "modules/ledwatch/2.0.0/ledwatch.aot",
-      "sha256": "7b941a900bf10a7e967a5d22eaeec5a114456c1d984c42250600946d64ff0ba2",
+      "path": "modules/ledwatch/3.0.0/ledwatch.aot",
+      "sha256": "e5d6e0311f64c78a14e68b3a6736dde5a3ef18c32c1af5f502f4b56006bb3e68",
       "bytes": 12744,
-      "note": "toolchain-v3 surgery container (kind xuansi-surgery-wamrc: the wan-cloud WAMR fork xuansi/base-2.4.0 wamrc built against the wan-cloud llvm-project surgery branch xuansi/a3-surgery; frozen recipe --target=xtensa --cpu=esp32s3 --size-level=3). Split literal pool: TEXT literal_size=0 + the xuansi.literal CUSTOM section — fw 0.3.0+ classifies it SURGERY and places the code in PSRAM exec (no internal-SRAM budget gate); older fw honestly refuses (the pool section predates RELOCATION by construction). Canonical product of drivers CI run 42860347011; the CI parity leg rebuilds it from the toolchain-v3 release wamrc and hard-compares the hash (single-source lock)."
+      "note": "toolchain-v3 surgery container (kind xuansi-surgery-wamrc: the wan-cloud WAMR fork xuansi/base-2.4.0 wamrc built against the wan-cloud llvm-project surgery branch xuansi/a3-surgery; frozen recipe --target=xtensa --cpu=esp32s3 --size-level=3). Split literal pool: TEXT literal_size=0 + the xuansi.literal CUSTOM section — fw 0.3.0+ classifies it SURGERY and places the code in PSRAM exec (no internal-SRAM budget gate); older fw honestly refuses (the pool section predates RELOCATION by construction). The recarved lane since the W3-T2 flip; the CI parity leg rebuilds it from the toolchain-v3 release wamrc and hard-compares the hash (single-source lock)."
     }
   },
   "fw_compat": {
-    "wasm": ">=0.3.0"
+    "wasm": ">=0.5.0"
   },
   "toolchain": {
     "wasi-sdk": "24.0 (LLVM 18.1.2)",

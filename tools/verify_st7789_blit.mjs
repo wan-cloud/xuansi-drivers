@@ -47,7 +47,7 @@ import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..');
-const wasmPath = process.argv[2] ?? join(root, 'modules/st7789/1.0.0/st7789.wasm');
+const wasmPath = process.argv[2] ?? join(root, 'modules/st7789/2.0.0/st7789.wasm');
 
 const FB = 115200, LIN_END = 262144, CEIL = LIN_END - FB; // 146944
 

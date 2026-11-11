@@ -7,13 +7,13 @@
 
 kind: codec
 release: production
-version: 1.0.0
-abi: 2
+version: 2.0.0
+abi: 1
 
 The camera-path codec: frames in (camera), encoded or raw bytes out
 (stream ch=2). It vendors the exact JPEG encoder the board's native
 path used (esp32-camera 2.1.8 jpge; per-scanline RGB565→RGB888
-conversion, H2V2, the `frame2jpg` quality semantics) behind the abi=2
+conversion, H2V2, the `frame2jpg` quality semantics) behind the unified host face
 host face — `cam_frame_get` hands the geometry out with the frame,
 `stream_send` (host-stamped `"jpge"`, ch=2) is the egress:
 
@@ -43,16 +43,17 @@ survived the wire. Host refusals (camera off, frame over cap) raise
 
 ## Measured
 
-- `wasm_bytes` — 28642 — deliverable .wasm (interp lane)
+- `wasm_bytes` — 28642 — deliverable .wasm (interp lane); same size as the retired 1.0.0 build — the deltas are the abi constant (2 → 1) and the memory-section max (the freeze)
 - `aot_bytes` — 83524 — toolchain-v3 surgery .aot
 - `initial_memory_bytes` — 917504 — 14 pages: VGA frame 614.4KB + JPEG out 128KB + encoder MCU pool 30.7KB + scanline 1.9KB + heap/args/out + the 64KB stack (static VGA-capable layout; the one dynamic allocation — the MCU line pool — is a fixed arena with its high-water tracked)
-- `aot_text_bytes` — 76416 — surgery TEXT (PSRAM exec); board-verified info() trio
-- `aot_pool_bytes` — 1708 — xuansi.literal split pool (board-verified)
+- `aot_text_bytes` — 76416 — surgery TEXT (PSRAM exec); board-verified info() trio on the pre-recarve twin (same sizes)
+- `aot_pool_bytes` — 1708 — xuansi.literal split pool (same sizes as the pre-recarve twin)
 - `mcu_pool_highwater_qvga_bytes` — 15360 — asserted natively (test_jpge.c T09)
 - `mcu_pool_highwater_vga_bytes` — 30720 — asserted natively
 - `interp_vga_q80_ms` — over 15000 — the VM-task watchdog kills a single wasm call > 5s: VGA interp encodes WILL trip it (measured ~15s+); interp-safe class = QVGA q<=60 (~3.1-3.9s)
-- `aot_vga_q80_ms` — 1229 — surgery-.aot lane median, n=3, 2026-11-11 P3 board run (q60: 1179ms) — the recipe's VGA shape rides this lane
-- `max_memory_bytes` — 1048576 — legacy lane (pre-recarve); the ABI 1 freeze pins initial==max on the W3 rebuild
+- `aot_vga_q80_ms` — 1229 — surgery-.aot lane median, n=3, 2026-11-11 P3 board run on the pre-recarve twin (q60: 1179ms; same TEXT/pool sizes) — the recipe's VGA shape rides this lane
+- `fw_compat: {wasm >= 0.5.0}` — 2.0.0 is the B15 recarve: the declaration returns to 1 and the memory face freezes initial == max; the cam-family import face IS the recarved unified table (the old abi=2 additions folded in)
+- `max_memory_bytes` — 917504 — the recarved ABI 1 freeze (initial == max; the 1.0.0 artifact carried the pre-recarve 1MB max and is refused by the fw 0.5.0 gate)
 
 ## Notes
 

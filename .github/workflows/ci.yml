@@ -91,7 +91,7 @@ jobs:
           # wamrc must be surgery ON (the toolchain-v3.yml smoke gate's
           # twin; grep decides, the --target=help exit is swallowed)
           hello="$TOOLCHAIN_ROOT/surgery-probe.wasm"
-          cp modules/hello/1.0.0/hello.wasm "$hello"
+          cp modules/hello/2.0.0/hello.wasm "$hello"
           "$TOOLCHAIN_ROOT/wamrc-install/wamrc" --target=xtensa --cpu=esp32s3 --size-level=3 \
             -o "$TOOLCHAIN_ROOT/surgery-probe.aot" "$hello" 2>&1 | tee "$TOOLCHAIN_ROOT/probe.log"
           grep -q "xuansi surgery mode: ON" "$TOOLCHAIN_ROOT/probe.log"
@@ -139,7 +139,7 @@ jobs:
           mkdir -p "$TOOLCHAIN_ROOT/wamrc-install"
           cp wamr/wamr-compiler/build/wamrc "$TOOLCHAIN_ROOT/wamrc-install/wamrc"
           hello="$TOOLCHAIN_ROOT/surgery-probe.wasm"
-          cp modules/hello/1.0.0/hello.wasm "$hello"
+          cp modules/hello/2.0.0/hello.wasm "$hello"
           "$TOOLCHAIN_ROOT/wamrc-install/wamrc" --target=xtensa --cpu=esp32s3 --size-level=3 \
             -o "$TOOLCHAIN_ROOT/surgery-probe.aot" "$hello" 2>&1 | tee "$TOOLCHAIN_ROOT/probe.log"
           grep -q "xuansi surgery mode: ON" "$TOOLCHAIN_ROOT/probe.log"

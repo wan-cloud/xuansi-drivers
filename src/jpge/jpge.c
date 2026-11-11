@@ -1,5 +1,6 @@
 /*
- * jpge.c — wasm JPEG codec module (kind=codec, abi=2; jpge@1.0.0).
+ * jpge.c — wasm JPEG codec module (kind=codec; jpge@2.0.0, the
+ * recarved ABI 1).
  *
  * The formal successor of the B12-P0 calibration artifact (0.1.0 —
  * deliberately never indexed): same vendored encoder core, renamed
@@ -11,8 +12,9 @@
  *
  * Canonical home: wan-cloud/xuansi-drivers (src/jpge/).
  *
- * Calling face (module_abi=2 marshalling — one msgpack array in, one
- * msgpack result out; see README "Module ABI"):
+ * Calling face (module ABI marshalling — one msgpack array in, one
+ * msgpack result out; the recarved ABI 1 unified table; see README
+ * "Module ABI"):
  *
  *   bench.wasm.call("jpge", "grab")               -- probe the camera
  *   bench.wasm.call("jpge", "encode", {quality})  -- re-encode last grab
@@ -73,7 +75,7 @@
  *   size) + jpge MCU pool 30,720 (VGA H2V2: 640*3*16) + scanline
  *   1,920 + heap 8,192 + args slot 128 + result 512 + wasm-ld 64KB
  *   stack ~= 852KB -> builds pin --initial-memory=917504 (14 pages;
- *   max stays the frozen 1MB). Everything is static .bss — WAMR
+ *   the B15 ABI 1 freeze pins max == initial). Everything is static .bss — WAMR
  *   builtin malloc is unavailable (heap_size=0). The one dynamic
  *   allocation inside the encoder (the MCU line pool) is carved from
  * a fixed arena with its high-water tracked (jpge_pool_hw()): QVGA
@@ -82,10 +84,18 @@
 #include <stdint.h>
 #include <stddef.h>
 
-/* abi=2: this module imports the cam family (cam_frame_get carries the
- * geometry out with the frame) — the retired abi=1 camera_frame_get/
- * camera_info names must NOT appear in the import face. */
-#define XUANSI_ABI 2
+/* B15 ABI recarve (ruled 2026-11-11): the ABI number is 1 AGAIN — the
+ * clean recarve; the old abi=1/abi=2 are retired with fw 0.5.0. This
+ * module's import face (the cam family — cam_frame_get carries the
+ * geometry out with the frame; the retired abi=1 camera_frame_get/
+ * camera_info names must NOT appear) is fully inside the recarved
+ * UNIFIED table — the old abi=2 additions were folded in — so the
+ * declaration drops the XUANSI_ABI=2 override and stays at the header
+ * default 1; what CHANGES for the recarved lane is the linear-memory
+ * freeze: initial == max (the static-footprint admission contract),
+ * i.e. build.sh pins --initial-memory=917504 --max-memory=917504 (the
+ * pre-recarve artifact carried max=1MB and is honestly refused by the
+ * fw 0.5.0 initial==max gate — retired with the wave-3 purge). */
 #include "xuansi_host.h"
 
 #ifndef XUANSI_ABI_OVERRIDE

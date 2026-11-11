@@ -392,7 +392,7 @@ int main(void)
     reset_state(1);
 
     /* ---- T01 abi + allocator ---- */
-    check(xuansi_abi() == 2, "T01 xuansi_abi()==2", "");
+    check(xuansi_abi() == 1, "T01 xuansi_abi()==1 (the B15 recarve)", "");
     check(xuansi_alloc(0) == 0, "T01b alloc(0) refused", "");
     check(xuansi_alloc(200) == LIN_HEAP_OFF + 8,
           "T01c large alloc -> heap_buf-based bump (P3-T12 rider: no bare "

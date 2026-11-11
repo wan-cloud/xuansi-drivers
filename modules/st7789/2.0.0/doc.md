@@ -7,7 +7,7 @@
 
 kind: driver
 release: production
-version: 1.0.0
+version: 2.0.0
 abi: 1
 
 Lua asks, the module drives real hardware (SPI + GPIO) through the
@@ -54,7 +54,7 @@ overlap-free floor. Host-side, xfer the frame to
 
 ## Measured
 
-- `wasm_bytes` — 13487 — deliverable .wasm (interp lane)
+- `wasm_bytes` — 13487 — deliverable .wasm (interp lane); the board-verified staged recarve product byte-for-byte (W2.T3, 33/33 on fw 0.5.0@4d9d9ca)
 - `aot_bytes` — 24012 — toolchain-v3 surgery .aot
 - `initial_memory_bytes` — 262144 — 4 wasm pages: fb 115200 + stage 4096 + out 2048 + heap 8192 + args 128 + cmd 8 ~= 130KB + the 64KB stack; statics+stack end at 196,480; hello's budget class
 - `aot_text_bytes` — 20484 — surgery TEXT (PSRAM exec); board-verified info() trio
@@ -62,7 +62,7 @@ overlap-free floor. Host-side, xfer the frame to
 - `full_frame_bytes` — 115200 — one 240x240 RGB565 frame
 - `full_frame_chunks` — 29 — at the engine's 4096B/xfer cap
 - `blit_window` — [130960, 146944] — the external-frame window (overlap-free by statics_end() arithmetic; pinned against the built wasm by tools/verify_st7789_blit.mjs)
-- `max_memory_bytes` — 1048576 — legacy lane (pre-recarve); the ABI 1 freeze pins initial==max on the W3 rebuild
+- `max_memory_bytes` — 262144 — the recarved ABI 1 freeze (initial == max; the 1.0.0 artifact carried the pre-recarve 1MB max and is refused by the fw 0.5.0 gate)
 
 ## Wiring
 

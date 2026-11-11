@@ -2,9 +2,9 @@
   "name": "hello",
   "kind": "driver",
   "release": "test-canary",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "abi": 1,
-  "src_commit": "234d7ccae4a30402a7346c6ab8592d16e45a150e",
+  "src_commit": "B15-W3-T2 flip (this commit) — the exact source this artifact was built from; hash pinned in the immediate follow-up commit",
   "src": "src/hello/hello.c",
   "entries": [
     {
@@ -148,13 +148,13 @@
       "initial_memory_bytes": 262144,
       "aot_text_bytes": 6432,
       "aot_pool_bytes": 500,
-      "max_memory_bytes": 1048576
+      "max_memory_bytes": 262144
     }
   },
   "footprint": {
     "wasm": {
       "initial_bytes": 262144,
-      "max_bytes": 1048576
+      "max_bytes": 262144
     },
     "aot": {
       "esp32s3": {
@@ -165,20 +165,23 @@
     }
   },
   "deliverable": {
-    "path": "modules/hello/1.0.0/hello.wasm",
-    "sha256": "ae789210a99482df2fbc9607b4df177a2c97009e76807c2b8098ca944744c9b0",
+    "path": "modules/hello/2.0.0/hello.wasm",
+    "sha256": "59c8381c7833477b97acc7ab48cc54198744b4e65fba3f1fe67fc4addd1f4ced",
     "bytes": 5714
   },
   "aot": {
     "esp32s3": {
-      "path": "modules/hello/1.0.0/hello.aot",
+      "path": "modules/hello/2.0.0/hello.aot",
       "sha256": "895f95af3565b16dae8dffd747107b1c141804122a06407bef0eabc54b9d8ba7",
       "bytes": 9016,
-      "note": "toolchain-v3 surgery container (kind xuansi-surgery-wamrc: the wan-cloud WAMR fork xuansi/base-2.4.0 wamrc built against the wan-cloud llvm-project surgery branch xuansi/a3-surgery; frozen recipe --target=xtensa --cpu=esp32s3 --size-level=3). Split literal pool: TEXT literal_size=0 + the xuansi.literal CUSTOM section — fw 0.3.0+ classifies it SURGERY and places the code in PSRAM exec (no internal-SRAM budget gate); older fw honestly refuses (the pool section predates RELOCATION by construction). Canonical product of drivers CI run 42860347011; the CI parity leg rebuilds it from the toolchain-v3 release wamrc and hard-compares the hash (single-source lock)."
+      "note": "toolchain-v3 surgery container (kind xuansi-surgery-wamrc: the wan-cloud WAMR fork xuansi/base-2.4.0 wamrc built against the wan-cloud llvm-project surgery branch xuansi/a3-surgery; frozen recipe --target=xtensa --cpu=esp32s3 --size-level=3). Split literal pool: TEXT literal_size=0 + the xuansi.literal CUSTOM section — fw 0.3.0+ classifies it SURGERY and places the code in PSRAM exec (no internal-SRAM budget gate); older fw honestly refuses (the pool section predates RELOCATION by construction). The recarved lane since the W3-T2 flip; the CI parity leg rebuilds it from the toolchain-v3 release wamrc and hard-compares the hash (single-source lock)."
     }
   },
   "toolchain": {
     "wasi-sdk": "24.0 (LLVM 18.1.2)",
     "wamrc": "WAMR fork xuansi/base-2.4.0 @ 17036fa0 built against wan-cloud/llvm-project xuansi/a3-surgery @ cf84bd31 (toolchain-v3, kind xuansi-surgery-wamrc)"
+  },
+  "fw_compat": {
+    "wasm": ">=0.5.0"
   }
 }

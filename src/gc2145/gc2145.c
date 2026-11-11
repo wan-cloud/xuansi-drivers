@@ -1,6 +1,6 @@
 /*
  * gc2145.c — GC2145 DVP camera sensor-profile module (kind=
- * sensor-profile, abi=2; B12-T5 — the "driver lives in wasm" thesis:
+ * sensor-profile; B12-T5 — the "driver lives in wasm" thesis:
  * the whole bring-up sequence is module data + module code, the host
  * only supplies the raw i2c/cam natives).
  *
@@ -12,8 +12,8 @@
  * drive). Register knowledge: see gc2145_regs.h (transcribed from the
  * vendored espressif/esp32-camera 2.1.8 driver, Apache-2.0).
  *
- * Calling face (module_abi=2 marshalling; one msgpack array in, one
- * msgpack map result out):
+ * Calling face (module ABI marshalling — one msgpack array in, one
+ * msgpack map result out; the recarved ABI 1 unified table):
  *
  *   bench.wasm.call("gc2145", "init", {framesize="QVGA"|"VGA"?})
  *     framesize optional, default "QVGA"; an unknown framesize string
@@ -67,13 +67,24 @@
  * module-ABI.md §3.1 (allocs <=128B share one fixed slot; the fw host
  * serializes every wasm call so the reuse is race-free). out 2048 +
  * heap 512 + args 128 + io 4 + table 1164 ~= 3.9KB -> the frozen
- * default 262144B initial (4 pages, max 1MB).
+ * default 262144B initial (4 pages; the B15 ABI 1 freeze pins
+ * max == initial).
  */
 
 #include <stdint.h>
 #include <stddef.h>
 
-#define XUANSI_ABI 2
+/* B15 ABI recarve (ruled 2026-11-11): the ABI number is 1 AGAIN — the
+ * clean recarve; the old abi=1/abi=2 are retired with fw 0.5.0. This
+ * module's import face (the i2c + cam families) is fully inside the
+ * recarved UNIFIED table — the old abi=2 additions were folded in —
+ * so the declaration drops the XUANSI_ABI=2 override and stays at the
+ * header default 1; what CHANGES for the recarved lane is the
+ * linear-memory freeze: initial == max (the static-footprint
+ * admission contract), i.e. build.sh pins --initial-memory=262144
+ * --max-memory=262144 (the pre-recarve artifact carried max=1MB and
+ * is honestly refused by the fw 0.5.0 initial==max gate — retired
+ * with the wave-3 purge). */
 #include "xuansi_host.h"
 #include "gc2145_regs.h"
 

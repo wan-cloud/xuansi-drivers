@@ -417,7 +417,7 @@ int main(void)
     canvas_pattern();
 
     /* ---- T01 abi + allocator ---- */
-    check(xuansi_abi() == 2, "T01 xuansi_abi()==2", "");
+    check(xuansi_abi() == 1, "T01 xuansi_abi()==1 (the B15 recarve)", "");
     check(xuansi_alloc(0) == 0, "T01b alloc(0) refused", "");
 
     /* ---- T02 shot q80: full face + wire bytes (QVGA) ---- */

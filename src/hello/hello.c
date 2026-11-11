@@ -38,6 +38,18 @@
 #include <stdint.h>
 #include <stddef.h>
 
+/* B15 ABI recarve (ruled 2026-11-11): the ABI number is 1 AGAIN — the
+ * clean recarve; the old abi=1/abi=2 are retired with fw 0.5.0. The
+ * declaration stays at the header default 1 (the number never moved
+ * for hello); what the recarve changes here is the linear-memory
+ * freeze — initial == max (the static-footprint admission contract),
+ * i.e. build.sh pins --initial-memory=262144 --max-memory=262144 (the
+ * pre-recarve artifact carried max=1MB and is honestly refused by the
+ * fw 0.5.0 initial==max gate). The CANARY character is untouched, on
+ * purpose: this module keeps importing the retired camera_frame_get/
+ * camera_info names — the unified recarved table retires them exactly
+ * as the abi=2 table did, so hello stays the loader's retired-import
+ * refusal vector (it exists to be refused at link time). */
 #include "xuansi_host.h"
 
 #ifndef XUANSI_ABI_OVERRIDE

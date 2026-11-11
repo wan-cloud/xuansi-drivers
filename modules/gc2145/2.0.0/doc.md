@@ -7,11 +7,11 @@
 
 kind: sensor-profile
 release: production
-version: 1.0.0
-abi: 2
+version: 2.0.0
+abi: 1
 
 The camera-migration wave's sensor profile: the whole "driver lives in
-wasm" thesis — the host supplies only the raw abi=2 natives (i2c×4 +
+wasm" thesis — the host supplies only the raw i2c+cam natives (i2c×4 +
 cam×5); every register decision is module-owned:
 
 ```lua
@@ -30,13 +30,13 @@ bench.wasm.call("gc2145", "off")                       -- cam_stop, idempotent
 
 ## Measured
 
-- `wasm_bytes` — 6905 — deliverable .wasm (interp lane)
+- `wasm_bytes` — 6905 — deliverable .wasm (interp lane); same size as the retired 1.0.0 build — the deltas are the abi constant (2 → 1) and the memory-section max (the freeze)
 - `aot_bytes` — 11904 — toolchain-v3 surgery .aot
 - `initial_memory_bytes` — 262144 — static memory only (instance heap_size=0: table in .rodata, §3.1 args-slot reuse; ~4KB used)
-- `aot_text_bytes` — 8784 — surgery TEXT (PSRAM exec); board-verified info() trio
-- `aot_pool_bytes` — 460 — xuansi.literal split pool (board-verified)
+- `aot_text_bytes` — 8784 — surgery TEXT (PSRAM exec); board-verified info() trio on the pre-recarve twin (same sizes)
+- `aot_pool_bytes` — 460 — xuansi.literal split pool (same sizes as the pre-recarve twin)
 - `init_wall_ms` — ~2400 — sensor power-up + warmup delays (physics, not interpreter overhead); budget the eval call accordingly
-- `max_memory_bytes` — 1048576 — legacy lane (pre-recarve); the ABI 1 freeze pins initial==max on the W3 rebuild
+- `max_memory_bytes` — 262144 — the recarved ABI 1 freeze (initial == max; the 1.0.0 artifact carried the pre-recarve 1MB max and is refused by the fw 0.5.0 gate)
 
 ## Wiring
 
@@ -52,8 +52,11 @@ bench.wasm.call("gc2145", "off")                       -- cam_stop, idempotent
   persists across `off()` (the i2c face has no release); it clears on
   session reset — meanwhile an op-path capture wanting those pins is
   refused with a message naming the pin and owner.
-- `fw_compat: {wasm >= 0.3.0}` — needs the abi=2 host table; the
-  retired abi=1 camera names are NOT imported.
+- `fw_compat: {wasm >= 0.5.0}` — 2.0.0 is the B15 recarve: the
+  declaration returns to 1 and the memory face freezes initial ==
+  max; the import face (i2c×4 + cam×5) IS the recarved unified
+  table — the old abi=2 additions folded in, the retired camera
+  names NOT imported.
 - Board exercise: B12-T8 (the module is native-tested against a fake
   i2c host + programmable PID + trap channel: 40 checks; the bench
   camera recipe that composes gc2145 + jpge is the repo README's

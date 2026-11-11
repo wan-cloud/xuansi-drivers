@@ -4,125 +4,140 @@
     {
       "name": "hello",
       "kind": "test-canary",
-      "version": "1.0.0",
+      "version": "2.0.0",
       "abi": 1,
       "files": [
         {
-          "path": "modules/hello/1.0.0/hello.wasm",
-          "sha256": "ae789210a99482df2fbc9607b4df177a2c97009e76807c2b8098ca944744c9b0",
+          "path": "modules/hello/2.0.0/hello.wasm",
+          "sha256": "59c8381c7833477b97acc7ab48cc54198744b4e65fba3f1fe67fc4addd1f4ced",
           "bytes": 5714
         },
         {
-          "path": "modules/hello/1.0.0/hello.aot",
+          "path": "modules/hello/2.0.0/hello.aot",
           "sha256": "895f95af3565b16dae8dffd747107b1c141804122a06407bef0eabc54b9d8ba7",
           "bytes": 9016,
           "target": "esp32s3"
         }
       ],
-      "src_commit": "234d7ccae4a30402a7346c6ab8592d16e45a150e"
+      "fw_compat": {
+        "wasm": ">=0.5.0"
+      },
+      "src_commit": "B15-W3-T2 flip — hash pinned in the follow-up commit"
     },
     {
       "name": "ledwatch",
       "kind": "production",
-      "version": "1.0.0",
+      "version": "3.0.0",
       "abi": 1,
       "files": [
         {
-          "path": "modules/ledwatch/1.0.0/ledwatch.wasm",
-          "sha256": "3454105a7233f29dd405a2de4900534672269587a4232d2f244e450f0fe54f66",
-          "bytes": 7547
-        }
-      ],
-      "src_commit": "d574147efcb59aea5d2212570503ebcf1eeb0fcf"
-    },
-    {
-      "name": "ledwatch",
-      "kind": "production",
-      "version": "2.0.0",
-      "abi": 2,
-      "files": [
-        {
-          "path": "modules/ledwatch/2.0.0/ledwatch.wasm",
-          "sha256": "774df0cf27c06f297bbe7cae49379b2bfc54a2ad150e3e954c6cfacea4d056f1",
+          "path": "modules/ledwatch/3.0.0/ledwatch.wasm",
+          "sha256": "ebe70c1997d9706872f2f32f09dcfc871ac1a45a192efd7b0ff9f8bb32b06f46",
           "bytes": 7537
         },
         {
-          "path": "modules/ledwatch/2.0.0/ledwatch.aot",
-          "sha256": "7b941a900bf10a7e967a5d22eaeec5a114456c1d984c42250600946d64ff0ba2",
+          "path": "modules/ledwatch/3.0.0/ledwatch.aot",
+          "sha256": "e5d6e0311f64c78a14e68b3a6736dde5a3ef18c32c1af5f502f4b56006bb3e68",
           "bytes": 12744,
           "target": "esp32s3"
         }
       ],
       "fw_compat": {
-        "wasm": ">=0.3.0"
+        "wasm": ">=0.5.0"
       },
-      "src_commit": "234d7ccae4a30402a7346c6ab8592d16e45a150e"
-    },
-    {
-      "name": "st7789",
-      "kind": "production",
-      "version": "1.0.0",
-      "abi": 1,
-      "files": [
-        {
-          "path": "modules/st7789/1.0.0/st7789.wasm",
-          "sha256": "fb161861a19589a9b73b001c24c69bfd118f0904bd3c49f013c5565b1a630f2a",
-          "bytes": 13487
-        },
-        {
-          "path": "modules/st7789/1.0.0/st7789.aot",
-          "sha256": "27207f65a7778f682a46b342d44ff6d7d57a6c6229126df01a36ff052b323e0c",
-          "bytes": 24012,
-          "target": "esp32s3"
-        }
-      ],
-      "src_commit": "234d7ccae4a30402a7346c6ab8592d16e45a150e"
+      "src_commit": "B15-W3-T2 flip — hash pinned in the follow-up commit"
     },
     {
       "name": "gc2145",
       "kind": "production",
-      "version": "1.0.0",
-      "abi": 2,
+      "version": "2.0.0",
+      "abi": 1,
       "files": [
         {
-          "path": "modules/gc2145/1.0.0/gc2145.wasm",
-          "sha256": "97b4770aef610c7f3fe219403929aa09379cb7e79ca89af91f642f57f3231552",
+          "path": "modules/gc2145/2.0.0/gc2145.wasm",
+          "sha256": "d08cc6f978d743791f5e323f2a8132ae6d674171a956f548aef91fcf5e13d8ba",
           "bytes": 6905
         },
         {
-          "path": "modules/gc2145/1.0.0/gc2145.aot",
-          "sha256": "6cea2b5df6e1174191deb19db8f659279fe0f9b1a6eb45409eeb1493889833a3",
+          "path": "modules/gc2145/2.0.0/gc2145.aot",
+          "sha256": "3f7e9475605a8ebf9eebd938c55ad24d516cb3f383aad077cf7e796b93cef649",
           "bytes": 11904,
           "target": "esp32s3"
         }
       ],
       "fw_compat": {
-        "wasm": ">=0.3.0"
+        "wasm": ">=0.5.0"
       },
-      "src_commit": "1b688983c251a1a6d755113589505ecaa2dd6523"
+      "src_commit": "B15-W3-T2 flip — hash pinned in the follow-up commit"
     },
     {
       "name": "jpge",
       "kind": "production",
-      "version": "1.0.0",
-      "abi": 2,
+      "version": "2.0.0",
+      "abi": 1,
       "files": [
         {
-          "path": "modules/jpge/1.0.0/jpge.wasm",
-          "sha256": "b44ab1a7faad32a76c3b5834f850192e4837e60d60c42e051a45396593393d06",
+          "path": "modules/jpge/2.0.0/jpge.wasm",
+          "sha256": "94fa31266814ae39f82f46da8a2a0212e5a5e86e5d0ea7bea1e8b065762667a8",
           "bytes": 28642
         },
         {
-          "path": "modules/jpge/1.0.0/jpge.aot",
-          "sha256": "4dc638f3b78de823fec68df3d6d935438749a10cbd4e138308f673e49df91a71",
+          "path": "modules/jpge/2.0.0/jpge.aot",
+          "sha256": "2d52db47d719bfb21844a650f16c3612c5a148b5f9deb85a70ae68758221fc0e",
           "bytes": 83524,
           "target": "esp32s3"
         }
       ],
       "fw_compat": {
-        "wasm": ">=0.3.0"
+        "wasm": ">=0.5.0"
       },
-      "src_commit": "748506a75184254ac01a6f9e52cdfa5318935700"
+      "src_commit": "B15-W3-T2 flip — hash pinned in the follow-up commit"
+    },
+    {
+      "name": "st7789",
+      "kind": "production",
+      "version": "2.0.0",
+      "abi": 1,
+      "files": [
+        {
+          "path": "modules/st7789/2.0.0/st7789.wasm",
+          "sha256": "a546696a3551670e64fe95500bd8ccac3c465a92d71d74d715c10aa026d56376",
+          "bytes": 13487
+        },
+        {
+          "path": "modules/st7789/2.0.0/st7789.aot",
+          "sha256": "27207f65a7778f682a46b342d44ff6d7d57a6c6229126df01a36ff052b323e0c",
+          "bytes": 24012,
+          "target": "esp32s3"
+        }
+      ],
+      "fw_compat": {
+        "wasm": ">=0.5.0"
+      },
+      "src_commit": "B15-W3-T2 flip — hash pinned in the follow-up commit"
+    },
+    {
+      "name": "hclock",
+      "kind": "production",
+      "version": "0.0.2",
+      "abi": 1,
+      "files": [
+        {
+          "path": "modules/hclock/0.0.2/hclock.wasm",
+          "sha256": "be1a4940869adbdb3d4ed24a5cf156cc736abb514c6ec54272554cef2ee5aa82",
+          "bytes": 729
+        },
+        {
+          "path": "modules/hclock/0.0.2/hclock.aot",
+          "sha256": "4ea39b3a804ea132654e485e3b424020f74310504cc6dd7d77f80f0ddb92da5a",
+          "bytes": 1284,
+          "target": "esp32s3"
+        }
+      ],
+      "fw_compat": {
+        "wasm": ">=0.5.0"
+      },
+      "src_commit": "7d556dc51a4aa580ec9ce0e20f3a6687558f47fb"
     }
   ]
 }

@@ -2,9 +2,9 @@
   "name": "jpge",
   "kind": "codec",
   "release": "production",
-  "version": "1.0.0",
-  "abi": 2,
-  "src_commit": "748506a75184254ac01a6f9e52cdfa5318935700",
+  "version": "2.0.0",
+  "abi": 1,
+  "src_commit": "B15-W3-T2 flip (this commit) — the exact source this artifact was built from; hash pinned in the immediate follow-up commit",
   "src": "src/jpge/jpge.c (+ src/jpge/jpge.cpp — vendored encoder core, change (6) de-latched table init)",
   "imports": [
     "xuansi.millis",
@@ -80,13 +80,13 @@
       "mcu_pool_highwater_vga_bytes": 30720,
       "interp_vga_q80_ms": "over 15000",
       "aot_vga_q80_ms": 1229,
-      "max_memory_bytes": 1048576
+      "max_memory_bytes": 917504
     }
   },
   "footprint": {
     "wasm": {
       "initial_bytes": 917504,
-      "max_bytes": 1048576
+      "max_bytes": 917504
     },
     "aot": {
       "esp32s3": {
@@ -98,7 +98,7 @@
   },
   "linear_memory": {
     "initial_bytes": 917504,
-    "max_bytes": 1048576,
+    "max_bytes": 917504,
     "note": "14 pages: VGA frame 614.4KB + JPEG out 128KB + encoder MCU pool 30.7KB + scanline 1.9KB + heap/args/out + wasm-ld 64KB stack. Static allocation only — WAMR builtin malloc unavailable (heap_size=0); the encoder's single allocation (MCU line pool) is a fixed arena, high-water 15,360B QVGA / 30,720B VGA, asserted natively (T09)."
   },
   "hardware": {
@@ -107,20 +107,20 @@
     "encoder_provenance": "vendored from espressif/esp32-camera 2.1.8 jpge (Apache-2.0; public upstream) — byte-identical conversion/subsampling/quality semantics to the board's former native frame2jpg path. P3-T1 (2026-11-10): change (6) — the Huffman/quant table init latches removed (unconditional per-encode re-derivation + sum(bits)<=256 legality gate); the board WAMR ESP-IDF build boots instance .bss dirty (os_mmap=heap_caps_malloc, never zeroed), and a dirty latch byte emitted garbage DHT tables (B12-P1 T8 FINDING-A: 640..3,500B segments vs legal <=~275B)."
   },
   "deliverable": {
-    "path": "modules/jpge/1.0.0/jpge.wasm",
-    "sha256": "b44ab1a7faad32a76c3b5834f850192e4837e60d60c42e051a45396593393d06",
+    "path": "modules/jpge/2.0.0/jpge.wasm",
+    "sha256": "94fa31266814ae39f82f46da8a2a0212e5a5e86e5d0ea7bea1e8b065762667a8",
     "bytes": 28642
   },
   "aot": {
     "esp32s3": {
-      "path": "modules/jpge/1.0.0/jpge.aot",
-      "sha256": "4dc638f3b78de823fec68df3d6d935438749a10cbd4e138308f673e49df91a71",
+      "path": "modules/jpge/2.0.0/jpge.aot",
+      "sha256": "2d52db47d719bfb21844a650f16c3612c5a148b5f9deb85a70ae68758221fc0e",
       "bytes": 83524,
-      "note": "toolchain-v3 surgery container (kind xuansi-surgery-wamrc: the wan-cloud WAMR fork xuansi/base-2.4.0 wamrc built against the wan-cloud llvm-project surgery branch xuansi/a3-surgery; frozen recipe --target=xtensa --cpu=esp32s3 --size-level=3). Split literal pool: TEXT literal_size=0 + the xuansi.literal CUSTOM section — fw 0.3.0+ classifies it SURGERY and places the code in PSRAM exec (no internal-SRAM budget gate); older fw honestly refuses (the pool section predates RELOCATION by construction). Canonical product of drivers CI run 42860347011; the CI parity leg rebuilds it from the toolchain-v3 release wamrc and hard-compares the hash (single-source lock)."
+      "note": "toolchain-v3 surgery container (kind xuansi-surgery-wamrc: the wan-cloud WAMR fork xuansi/base-2.4.0 wamrc built against the wan-cloud llvm-project surgery branch xuansi/a3-surgery; frozen recipe --target=xtensa --cpu=esp32s3 --size-level=3). Split literal pool: TEXT literal_size=0 + the xuansi.literal CUSTOM section — fw 0.3.0+ classifies it SURGERY and places the code in PSRAM exec (no internal-SRAM budget gate); older fw honestly refuses (the pool section predates RELOCATION by construction). The recarved lane since the W3-T2 flip; the CI parity leg rebuilds it from the toolchain-v3 release wamrc and hard-compares the hash (single-source lock)."
     }
   },
   "fw_compat": {
-    "wasm": ">=0.3.0"
+    "wasm": ">=0.5.0"
   },
   "toolchain": {
     "wasi-sdk": "24.0 (LLVM 18.1.2)",

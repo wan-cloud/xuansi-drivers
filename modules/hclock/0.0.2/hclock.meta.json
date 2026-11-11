@@ -1,0 +1,85 @@
+{
+  "name": "hclock",
+  "kind": "driver",
+  "release": "production",
+  "version": "0.0.2",
+  "abi": 1,
+  "src_commit": "7d556dc51a4aa580ec9ce0e20f3a6687558f47fb",
+  "src": "src/hclock/hclock.c",
+  "imports": [
+    "xuansi.millis"
+  ],
+  "entries": [
+    {
+      "fn": "xuansi_abi",
+      "signature": "() -> u32",
+      "desc": "abi version gate; returns 1 — the RECARVED ABI 1 (B15, 2026-11-11): the unified host table + the initial==max memory freeze (this module's imports are the abi=1-era subset, untouched by the recarve)"
+    },
+    {
+      "fn": "xuansi_alloc",
+      "signature": "(u32 n) -> u32",
+      "desc": "linear-memory offset for the host-written msgpack args; 0 = refusal; <=128B calls reuse one fixed slot (§3.1 — the on-board lineage's 256B-heap variant died of exactly this); larger bumps return heap_buf-based addresses"
+    },
+    {
+      "fn": "now",
+      "signature": "[] -> [ms]",
+      "desc": "boot milliseconds (u32, wraps at 49.7 days) via the millis out-param convention — fresh read per call, landed in a .bss scalar (never a wasm stack slot: cross-lane portability)"
+    }
+  ],
+  "doc": {
+    "ops": [
+      {
+        "name": "now",
+        "args": "[]",
+        "result": "[ms]",
+        "semantics": "boot milliseconds (u32, wraps at 49.7 days) via the millis out-param convention — fresh read per call, landed in a .bss scalar (cross-lane portable: never a wasm stack slot)"
+      }
+    ],
+    "measured": {
+      "wasm_bytes": 729,
+      "aot_bytes": 1284,
+      "initial_memory_bytes": 262144,
+      "aot_text_bytes": 448,
+      "aot_pool_bytes": 76,
+      "max_memory_bytes": 262144
+    }
+  },
+  "footprint": {
+    "wasm": {
+      "initial_bytes": 262144,
+      "max_bytes": 262144
+    },
+    "aot": {
+      "esp32s3": {
+        "initial_bytes": 262144,
+        "text_bytes": 448,
+        "pool_bytes": 76
+      }
+    }
+  },
+  "linear_memory": {
+    "initial_bytes": 262144,
+    "max_bytes": 262144,
+    "note": "the recarved ABI 1 freeze: initial == max (4 wasm pages — args slot + 8KB bump arena + 64B out buffer + the wasm-ld 64KB stack; hello's budget class)"
+  },
+  "deliverable": {
+    "path": "modules/hclock/0.0.2/hclock.wasm",
+    "sha256": "be1a4940869adbdb3d4ed24a5cf156cc736abb514c6ec54272554cef2ee5aa82",
+    "bytes": 729
+  },
+  "aot": {
+    "esp32s3": {
+      "path": "modules/hclock/0.0.2/hclock.aot",
+      "sha256": "4ea39b3a804ea132654e485e3b424020f74310504cc6dd7d77f80f0ddb92da5a",
+      "bytes": 1284,
+      "note": "toolchain-v3 surgery container (the frozen recipe --target=xtensa --cpu=esp32s3 --size-level=3). STAGED (git-ignored staging/, W2-T3 2026-11-12): NOT in index.json — W3-T2 promotes it with the six-module republish. The .aot lane is inherently initial==max (wamrc collapses the memory face to one fixed page)."
+    }
+  },
+  "toolchain": {
+    "wasi-sdk": "24.0 (LLVM 18.1.2)",
+    "wamrc": "WAMR fork xuansi/base-2.4.0 @ 17036fa0 built against wan-cloud/llvm-project xuansi/a3-surgery @ cf84bd31 (toolchain-v3, kind xuansi-surgery-wamrc)"
+  },
+  "fw_compat": {
+    "wasm": ">=0.5.0"
+  }
+}

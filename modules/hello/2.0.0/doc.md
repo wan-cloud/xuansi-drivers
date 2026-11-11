@@ -7,7 +7,7 @@
 
 kind: driver
 release: test-canary
-version: 1.0.0
+version: 2.0.0
 abi: 1
 
 The ABI's first consumer and the template new modules copy: one entry
@@ -17,11 +17,15 @@ marshalling convention (one msgpack array in at `xuansi_alloc`'s offset,
 one packed `u64 = (result_ptr << 32) | result_len` out) ships here.
 
 **test-canary** (not production): this artifact imports the retired
-abi=1 camera names (`camera_frame_get`/`camera_info`) — on any abi=2
-host table (fw ≥ 0.3.0) it is honestly refused at link time. That
-negative case is exactly why it stays published: it is the loader's
-retired-import refusal vector. Its `now`/`echo`/`add`/`spi_selftest`
-faces remain the canonical quick smoke on abi=1-era firmware.
+camera names (`camera_frame_get`/`camera_info`) — on every host table
+since fw 0.3.0 (the abi=2 table, and now the recarved unified table of
+fw 0.5.0) it is honestly refused at link time. That negative case is
+exactly why it stays published: it is the loader's retired-import
+refusal vector, kept through the B15 recarve on purpose — same
+imports, new declaration (the recarved `abi: 1`). Its
+`now`/`echo`/`add`/`spi_selftest` faces were the canonical quick
+smoke on abi=1-era (fw 0.2.x) firmware; on any current fw the refusal
+itself is the test.
 
 ## Ops
 
@@ -46,12 +50,12 @@ ABI §3.1).
 
 ## Measured
 
-- `wasm_bytes` — 5714 — deliverable .wasm (index files[])
-- `aot_bytes` — 9016 — toolchain-v3 surgery .aot
+- `wasm_bytes` — 5714 — deliverable .wasm (index files[]); differs from the retired 1.0.0 build only in the memory-section max (the freeze) — the code is unchanged
+- `aot_bytes` — 9016 — toolchain-v3 surgery .aot; byte-identical to the retired 1.0.0 container (wamrc collapses the memory face to one fixed page — the .aot lane was already initial==max by construction)
 - `initial_memory_bytes` — 262144 — the ABI-freeze 4-page default (hello's budget class)
 - `aot_text_bytes` — 6432 — surgery TEXT (PSRAM exec)
 - `aot_pool_bytes` — 500 — xuansi.literal split pool
-- `max_memory_bytes` — 1048576 — legacy lane (pre-recarve); the ABI 1 freeze pins initial==max on the W3 rebuild
+- `max_memory_bytes` — 262144 — the recarved ABI 1 freeze (initial == max; the 1.0.0 artifact carried the pre-recarve 1MB max and is refused by the fw 0.5.0 gate)
 
 ## Notes
 

@@ -53,7 +53,8 @@
  * Linear-memory budget (QVGA): frame 153,600 + label map 153,600 +
  * parent 76,804 + area 153,608 + selected map 76,804 + heap 8,192 +
  * result 4,096 ~= 627KB, plus the wasm-ld default 64KB stack -> builds
- * pin --initial-memory=720896 (11 pages; max stays 1MB). One ledwatch
+ * pin --initial-memory=720896 (11 pages; the B15 ABI 1 freeze pins
+ * max == initial). One ledwatch
  * instance + one hello co-load fit the board's 1MB WAMR pool; two
  * ledwatch instances do not (the loader refuses with an out-of-memory
  * error — by design).
@@ -61,10 +62,18 @@
 #include <stdint.h>
 #include <stddef.h>
 
-/* abi=2: this module imports the cam family (cam_frame_get carries the
- * geometry out with the frame) — the retired abi=1 camera_frame_get/
- * camera_info names must NOT appear in the import face. */
-#define XUANSI_ABI 2
+/* B15 ABI recarve (ruled 2026-11-11): the ABI number is 1 AGAIN — the
+ * clean recarve; the old abi=1/abi=2 are retired with fw 0.5.0. This
+ * module's import face (the cam family — cam_frame_get carries the
+ * geometry out with the frame; the retired abi=1 camera_frame_get/
+ * camera_info names must NOT appear) is fully inside the recarved
+ * UNIFIED table — the old abi=2 additions were folded in — so the
+ * declaration drops the XUANSI_ABI=2 override and stays at the header
+ * default 1; what CHANGES for the recarved lane is the linear-memory
+ * freeze: initial == max (the static-footprint admission contract),
+ * i.e. build.sh pins --initial-memory=720896 --max-memory=720896 (the
+ * pre-recarve artifact carried max=1MB and is honestly refused by the
+ * fw 0.5.0 initial==max gate — retired with the wave-3 purge). */
 #include "xuansi_host.h"
 
 #ifndef XUANSI_ABI_OVERRIDE

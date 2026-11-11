@@ -243,11 +243,11 @@ jobs:
           set -eux
           mkdir -p t10out
           declare -A WASMS=(
-            [hello]=modules/hello/1.0.0/hello.wasm
-            [gc2145]=modules/gc2145/1.0.0/gc2145.wasm
-            [ledwatch]=modules/ledwatch/2.0.0/ledwatch.wasm
-            [st7789]=modules/st7789/1.0.0/st7789.wasm
-            [jpge]=modules/jpge/1.0.0/jpge.wasm
+            [hello]=modules/hello/2.0.0/hello.wasm
+            [gc2145]=modules/gc2145/2.0.0/gc2145.wasm
+            [ledwatch]=modules/ledwatch/3.0.0/ledwatch.wasm
+            [st7789]=modules/st7789/2.0.0/st7789.wasm
+            [jpge]=modules/jpge/2.0.0/jpge.wasm
           )
           for m in hello gc2145 ledwatch st7789 jpge; do
             # surgery is the xtensa default on this fork wamrc; assert the

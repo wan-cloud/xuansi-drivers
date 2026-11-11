@@ -276,7 +276,7 @@ jobs:
         run: |
           set -eux
           ./wamrc-v3 --target=xtensa --cpu=esp32s3 --size-level=3 \
-            -o hello-v3-smoke.aot modules/hello/1.0.0/hello.wasm 2>&1 | tee smoke.log
+            -o hello-v3-smoke.aot modules/hello/2.0.0/hello.wasm 2>&1 | tee smoke.log
           grep -q "xuansi surgery mode: ON" smoke.log
           python3 - <<'EOF'
           import struct, sys

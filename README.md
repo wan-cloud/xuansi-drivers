@@ -15,12 +15,19 @@ meta). This table is the one-glance index:
 
 | module | version | release | kind | one-liner |
 |--------|---------|---------|------|-----------|
-| [hello](modules/hello/1.0.0/doc.md) | 1.0.0 | test-canary | driver | the ABI's reference module — full host-surface tour; imports the retired camera names on purpose (the loader's retired-import refusal vector) |
-| [ledwatch](modules/ledwatch/2.0.0/doc.md) | 2.0.0 | production | algorithm | QVGA camera frames → LED on/off regions (connected components), consumed by the closed-loop tasks |
-| [ledwatch](modules/ledwatch/1.0.0/doc.md) | 1.0.0 | production | algorithm | the superseded abi=1 build (retired camera imports — link-refused on fw ≥ 0.3.0) |
-| [st7789](modules/st7789/1.0.0/doc.md) | 1.0.0 | production | driver | ST7789V 240x240 TFT panel over CS-less SPI — the first `driver` module |
-| [gc2145](modules/gc2145/1.0.0/doc.md) | 1.0.0 | production | sensor-profile | the GC2145 bring-up sequence as module data + code — the first abi=2 module |
-| [jpge](modules/jpge/1.0.0/doc.md) | 1.0.0 | production | codec | camera frames → JPEG or raw RGB565 out the stream — the first `codec` module |
+| [hello](modules/hello/2.0.0/doc.md) | 2.0.0 | test-canary | driver | the ABI's reference module — full host-surface tour; imports the retired camera names on purpose (the loader's retired-import refusal vector) |
+| [ledwatch](modules/ledwatch/3.0.0/doc.md) | 3.0.0 | production | algorithm | QVGA camera frames → LED on/off regions (connected components), consumed by the closed-loop tasks |
+| [st7789](modules/st7789/2.0.0/doc.md) | 2.0.0 | production | driver | ST7789V 240x240 TFT panel over CS-less SPI — the first `driver` module |
+| [gc2145](modules/gc2145/2.0.0/doc.md) | 2.0.0 | production | sensor-profile | the GC2145 bring-up sequence as module data + code — the first abi=2 module (now the unified table) |
+| [jpge](modules/jpge/2.0.0/doc.md) | 2.0.0 | production | codec | camera frames → JPEG or raw RGB565 out the stream — the first `codec` module |
+| [hclock](modules/hclock/0.0.2/doc.md) | 0.0.2 | production | driver | the millis one-native module — the smallest reference and the cheapest load-path smoke |
+
+Every entry is **recarved ABI 1** (initial == max memory) since the
+B15 wave-3 flip: all six require fw >= 0.5.0
+(`fw_compat.wasm ">=0.5.0"`), and every pre-recarve artifact is
+retired — purged from the tree and the index (git history keeps
+them), honestly refused by the fw 0.5.0 loader, never silently
+substituted.
 
 `release` is the index's `kind` axis (`production` | `test-canary` —
 what the daemon surfaces verbatim at fetch/push time); the module
@@ -84,8 +91,10 @@ retired names is refused at link time.
 Every module ships **two** deliverable artifacts since P3-T12
 (spec §8-4 dual-product ruling):
 
-- **`.wasm`** — the interpreter bytecode, architecture-neutral, loads
-  on any fw with a wasm loader (>=0.2.0). The universal fallback.
+- **`.wasm`** — the interpreter bytecode, architecture-neutral. The
+  repo's products are recarved-ABI-1 shaped (initial == max) since the
+  B15 flip: officially fw >= 0.5.0 (`fw_compat.wasm`). The universal
+  fallback when no `.aot` matches the board.
 - **`.aot`** — the compiled xtensa/esp32s3 container, per-target
   (meta `aot` namespace: `"aot": {"esp32s3": {...}}` — future targets
   add keys, no schema migration). Built by the **toolchain-v3 surgery
@@ -194,30 +203,23 @@ trips the 5s VM-task watchdog — re-confirmed on that same run
 `framesize:"QVGA"`; on the default paired push, VGA is the shape to
 use.
 
-**Co-load budgets — measured, not summed** (2026-11-09 board run):
-the WAMR pool is 2MB since the abi=2 wave — the 1MB pool could not
-hold jpge's 917,504B static layout beside ledwatch's 720,896B, which
-is why it was widened. On the board, all four published modules load
-and run together — gc2145 (262,144B initial) + jpge (917,504B) +
-ledwatch (720,896B) + st7789 (262,144B), an initial-memory sum of
-2,162,688B against the pool's 2,097,152B — measured stable across
-both load orders plus unload/reload cycles: the pool's bookkeeping
-is not a simple sum-of-initial-memories ceiling, and an earlier
-revision of this paragraph that ruled four-way co-residency out was
-wrong (corrected here). Two caveats remain, honestly: the loader
-still refuses with an out-of-memory error when it does run out —
-never design against the pool's last byte — and a VGA scene
-additionally parks the ~600KB DVP frame buffer on the same PSRAM
-(allocated firmware-side, outside the pool), so four-module
-co-residency under a VGA scene is unmeasured (three-module co-residency
-under a VGA scene measured green on the 2026-11-11 P3 run); the
-interpreter lane pins QVGA (note above), which is the shape the
-four-module runs were measured at. Since the B15 wave the account is
-explicit: every meta carries the module's static footprint
-(`footprint`: initial/max from the `.wasm` memory section; text/pool
-from the `.aot` container) and the fw load gate pre-checks
-Σ(footprints) against `wasm_memory_budget_bytes` with the arithmetic
-in the refusal (`bench.wasm.plan` is the dry-run).
+**Co-load budgets — the admission account is explicit since B15**:
+the WAMR pool is 2MB (`wasm_memory_budget_bytes` 2,097,152) and the
+fw load gate pre-checks Σ(footprints) against it with the arithmetic
+in the refusal (`bench.wasm.plan` is the dry-run). Every meta carries
+the module's static footprint (`footprint`: initial/max from the
+`.wasm` memory section — equal, by the ABI 1 freeze; text/pool from
+the `.aot` container). Working the numbers on the published six:
+initial-memory footprints are hello/hclock/gc2145/st7789 262,144B,
+ledwatch 720,896B, jpge 917,504B — e.g. gc2145 + jpge + ledwatch =
+1,900,544B fits; any four-way set that includes both ledwatch and
+jpge exceeds the budget and is honestly refused (a pre-B15 board run
+had measured the pre-recarve four co-resident in the pool — that was
+the old bookkeeping, before the account made the sum the contract;
+never design against the pool's last byte). A VGA scene additionally
+parks the ~600KB DVP frame buffer on the same PSRAM (allocated
+firmware-side, outside the pool), and the interpreter lane pins QVGA
+(note above).
 
 **No camera tool on the MCP face — assemble state from the modules**:
 the dedicated camera status/capture/off tools are gone; camera
@@ -251,10 +253,9 @@ src/xuansi_host.h           # shared ABI declarations (module-side mirror
 src/<name>/<name>.c         # module source (canonical home)
 src/<name>/test_<name>.c    # native unit test + stub host
 src/<name>/VERSION          # e.g. "1.0.0"
-build.sh                    # wasi-sdk + wamrc build (all modules or by name;
-                            # --next = the recarved-ABI-1 lane -> staging/)
-staging/                    # git-ignored: recarved-ABI-1 products awaiting
-                            # the wave-3 republish (NOT in the index)
+build.sh                    # wasi-sdk + wamrc build (all modules or by
+                            # name; the ONE lane = recarved ABI 1,
+                            # initial==max; --check = rebuild+compare)
 tools/extract_doc.py        # doc.md -> meta doc/release/footprint embed +
                             # artifact footprint parser (CI parity)
 tools/gen-abi-reference/    # the ABI reference generator + curated sidecar
@@ -276,12 +277,13 @@ is the canonical home for module sources from that point on.
     {
       "name": "hello",
       "kind": "test-canary",
-      "version": "1.0.0",
+      "version": "2.0.0",
       "abi": 1,
       "files": [
-        { "path": "modules/hello/1.0.0/hello.wasm",
+        { "path": "modules/hello/2.0.0/hello.wasm",
           "sha256": "<hex>", "bytes": 5714 }
       ],
+      "fw_compat": { "wasm": ">=0.5.0" },
       "src_commit": "<git commit of src/hello/hello.c>"
     }
   ]
@@ -293,14 +295,14 @@ canary vocabulary the daemon passes verbatim through fetch/manifest/
 push replies). The descriptive module kind (`"driver" |
 "sensor-profile" | "algorithm" | "codec"`) lives in each meta.json's
 `kind` and in the doc.md header. A `test-canary` entry is a published
-module whose FACE is deliberately a test vector (hello@1.0.0 keeps the
+module whose FACE is deliberately a test vector (hello@2.0.0 keeps the
 retired camera imports — it exists to be refused). The criterion is
-deliberate designation, not incidental test value: hello@1.0.0 is THE
+deliberate designation, not incidental test value: hello@2.0.0 is THE
 canonical test-canary, while a superseded historical build that merely
-happens to serve as a rename-era negative vector (ledwatch@1.0.0)
-stays production. `fw_compat` entries (the fw floor a module's imports
-need — `{"wasm": ">=0.3.0"}` for the abi=2 host table) ride the index
-and meta as before.
+happens to serve as a rename-era negative vector (ledwatch@1.0.0,
+retired with the wave-3 purge) stayed production. `fw_compat` entries
+(the fw floor a module needs) ride the index and meta as before —
+`{"wasm": ">=0.5.0"}` for every recarved-ABI-1 product.
 
 ### meta.json (per version, beside the artifacts)
 
@@ -326,7 +328,7 @@ artifacts — edit the doc, never the meta):
 |---|---|
 | wasi-sdk | **24.0** (LLVM 18.1.2) — [release tarball](https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-24/wasi-sdk-24.0-x86_64-linux.tar.gz), sha256 `c6c38aab56e5de88adf6c1ebc9c3ae8da72f88ec2b656fb024eda8d4167a0bc5` |
 | wamrc (**toolchain-v3**, the default/latest) | the **surgery wamrc**: WAMR fork [wan-cloud/wasm-micro-runtime](https://github.com/wan-cloud/wasm-micro-runtime) `xuansi/base-2.4.0` (commit `17036fa0…`) built against the LLVM fork [wan-cloud/llvm-project](https://github.com/wan-cloud/llvm-project) `xuansi/a3-surgery` (commit `cf84bd31…`) — kind `xuansi-surgery-wamrc`; its `.aot` is the PSRAM-exec deliverable lane |
-| wamrc (toolchain-v2, kept) | **WAMR-2.4.0** (tag `WAMR-2.4.0`, commit `47c7c85a…`) built from source against [espressif/llvm-project](https://github.com/espressif/llvm-project) `xtensa_release_18.1.2` (commit `344b928e…`) — the stock wamrc, kept for the wasm track; its `.aot` lane is retired (`fw_compat.aot ">=0.3.0 <0.4.0"` — the fw-internal-SRAM lane loads on fw 0.3.x only; fw 0.4.0+ refuses, rebuild via toolchain-v3 or push the `.wasm`) |
+| wamrc (toolchain-v2, historical) | **WAMR-2.4.0** (tag `WAMR-2.4.0`, commit `47c7c85a…`) built from source against [espressif/llvm-project](https://github.com/espressif/llvm-project) `xtensa_release_18.1.2` (commit `344b928e…`) — the stock wamrc; everything it shipped is retired (`fw_compat.aot ">=0.3.0 <0.4.0"` — the fw-internal-SRAM lane loads on fw 0.3.x only; `fw_compat.wasm ">=0.2.0 <0.5.0"` — its pre-recarve wasm products are refused by the fw 0.5.0 recarve gate) |
 
 The machine-readable pin is [`toolchain-index.json`](toolchain-index.json)
 (structure-checked by `tools/verify_tcindex.py`) — the pinned source the
@@ -341,17 +343,17 @@ and the wamrc entries land as those legs are built). win-x64 wamrc:
 best-effort leg failed (MSVC probe); tracked P2.
 
 Build flags are frozen in `build.sh` (`-O2 -fno-jump-tables -nostdlib`,
-`--no-entry --initial-memory=<per module> --max-memory=1048576
+`--no-entry --initial-memory=<per module> --max-memory=<same value>
 --global-base=1024`, `--strip-debug --export-dynamic`; hello pins the
-ABI-freeze 256KB initial, ledwatch pins 11 pages — see
-`init_mem_for()`); exports are declared with `export_name` attributes.
+freeze's 256KB initial, ledwatch pins 11 pages — see `init_mem_for()`).
 Rebuilds are deterministic — CI re-derives every hash and compares it
-against `index.json` and each `meta.json` on every push. **The
-`--max-memory=1048576` half is the LEGACY lane** (pre-recarve
-artifacts): the recarved ABI 1 freezes `max == initial`, and
-`./build.sh --next` builds that lane into `staging/` for the wave-3
-republish — the committed artifacts keep the legacy flag set until
-that flip, byte-for-byte.
+against `index.json` and each `meta.json` on every push. **The one
+lane since the B15 W3-T2 flip is the recarved ABI 1**: `max ==
+initial` everywhere (the static-footprint admission contract; the fw
+0.5.0 loader refuses `initial != max` shapes with the bytes in the
+refusal). The pre-recarve `--max-memory=1048576` artifacts were purged
+in the same flip — git history keeps them, the loader honestly
+refuses them, nothing silently falls back.
 
 ## User-compiled modules (agent path)
 
@@ -431,8 +433,9 @@ narrower fw-INTERNAL SRAM lane (within the board's advertised
 `wamrc_path` dev override, manifest kind `wasm-dev`) — fw 0.3.x only:
 fw 0.4.0+ honestly refuses a stock `.aot` at load (rebuild via
 toolchain-v3 or push the `.wasm` single artifact), never silently
-swapped for the `.wasm`. v2 itself stays current for the wasm track
-(`fw_compat.wasm ">=0.2.0"` unchanged).
+swapped for the `.wasm`. v2 is historical as a generation (both
+domains upper-bounded — its products load nowhere current); the wasm
+track's wasi-sdk pin stays identical to v3's for user compiles.
 
 ### Manual fallback (documentation-level)
 
@@ -485,8 +488,6 @@ tree; the two consumer routes above are the honest ways to use one.
 ./build.sh              # build all published modules -> modules/<name>/<ver>/
 ./build.sh hello        # one module
 ./build.sh --check      # rebuild into a scratch dir, compare hashes
-./build.sh --next       # the recarved-ABI-1 lane (initial==max) -> staging/
-                        #   (st7789 migration + hclock; NOT published — wave-3)
 python3 tools/extract_doc.py --check      # doc.md <-> meta doc/release/footprint parity
 python3 tools/gen-abi-reference/gen.py --check   # abi-reference drift-lock
 cc -DXUANSI_NATIVE_TEST -Wall -Wextra -I src -I src/hello \

@@ -7,8 +7,8 @@
 
 kind: algorithm
 release: production
-version: 2.0.0
-abi: 2
+version: 3.0.0
+abi: 1
 
 Turns QVGA RGB565 camera frames into LED on/off regions — the
 analyze() output face is consumed verbatim by the bench's display and
@@ -40,17 +40,20 @@ created by lit pixels whose left/up neighbours are dark (a
 4-independent set, at most w·h/2 = 38,400 < 65,535) — the
 checkerboard vector pins the worst case.
 
-Behavior is byte-identical to 1.0.0; the only change from
-[1.0.0](../1.0.0/doc.md) is the abi=2 import face (`cam_frame_get`
-carries geometry with the frame; the retired `camera_*` names are
-gone) — needs the abi=2 host table (`fw_compat: wasm >= 0.3.0`).
+Behavior is byte-identical through every version; 3.0.0 is the B15
+recarve (the old abi=1/abi=2 numbers retired with fw 0.5.0): the
+declaration returns to 1 and the memory face freezes initial == max.
+The 2.0.0-era import face (the cam family; `cam_frame_get` carries
+geometry with the frame, the retired `camera_*` names gone) is exactly
+the recarved UNIFIED table — unchanged. Needs fw >= 0.5.0
+(`fw_compat: wasm >= 0.5.0`).
 
 ## Measured
 
-- `wasm_bytes` — 7537 — deliverable .wasm (interp lane)
+- `wasm_bytes` — 7537 — deliverable .wasm (interp lane); same size as the retired 2.0.0 build — the deltas are the abi constant (2 → 1) and the memory-section max (the freeze)
 - `aot_bytes` — 12744 — toolchain-v3 surgery .aot
 - `initial_memory_bytes` — 720896 — 11 pages: CCL working set ~627KB (frame 153600 + u16 label map 153600 + parent 76804 + area 153608 + selected map 76804 + heap 8192 + result 4096) + the wasm-ld 64KB stack
-- `aot_text_bytes` — 11520 — surgery TEXT (PSRAM exec); board-verified info() trio
-- `aot_pool_bytes` — 244 — xuansi.literal split pool (board-verified)
-- `max_memory_bytes` — 1048576 — legacy lane (pre-recarve); the ABI 1 freeze pins initial==max on the W3 rebuild
-- `coload_note` — co-loads with gc2145 + jpge + st7789 in the 2MB pool on the board (measured stable across both load orders + unload/reload cycles, 2026-11-09)
+- `aot_text_bytes` — 11520 — surgery TEXT (PSRAM exec); board-verified info() trio on the pre-recarve twin (same sizes)
+- `aot_pool_bytes` — 244 — xuansi.literal split pool (same sizes as the pre-recarve twin)
+- `max_memory_bytes` — 720896 — the recarved ABI 1 freeze (initial == max; the 2.0.0 artifact carried the pre-recarve 1MB max and is refused by the fw 0.5.0 gate)
+- `coload_note` — the 2026-11-09 board measured gc2145 + jpge + ledwatch + st7789 co-resident in the 2MB pool (pre-admission-era bookkeeping); under the B15 admission account that four-way set sums to 2,162,688B > the 2,097,152B budget and is honestly refused with the arithmetic — three-way sets fit (e.g. gc2145 + jpge + ledwatch = 1,900,544B)
