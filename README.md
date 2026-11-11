@@ -6,18 +6,28 @@ ESP32-S3 hardware probe driven by an agent over the
 firmware hot-loads these modules onto the board's WAMR runtime, where
 they drive GPIO/SPI/camera hardware through a small frozen host API.
 
-Current contents: `hello@1.0.0` — the ABI's reference module (full
-host-surface tour: echo/add marshalling, GPIO, timing, stream, SPI
-loopback, camera frame) — `ledwatch@1.0.0` — the ABI's first
-`algorithm` module (camera frame → LED on/off region detection; see
-"ledwatch" below) — `st7789@1.0.0` — the ABI's first `driver`
-module (ST7789V 240x240 TFT panel over CS-less SPI; see "st7789"
-below) — `gc2145@1.0.0` — the first `sensor-profile` module (the
-GC2145 bring-up sequence as module data + code; see "gc2145" below)
-— and `jpge@1.0.0` — the first `codec` module (camera frames →
-JPEG or raw RGB565 out the stream; see "jpge" below).
+## Module index
 
-## Module ABI (abi = 1, frozen)
+Per-module documentation lives **beside each artifact** at
+`modules/<name>/<ver>/doc.md` (ops table, measured numbers, wiring —
+the same file the daemon's `xuansi_module_doc` face reads through the
+meta). This table is the one-glance index:
+
+| module | version | release | kind | one-liner |
+|--------|---------|---------|------|-----------|
+| [hello](modules/hello/1.0.0/doc.md) | 1.0.0 | test-canary | driver | the ABI's reference module — full host-surface tour; imports the retired camera names on purpose (the loader's retired-import refusal vector) |
+| [ledwatch](modules/ledwatch/2.0.0/doc.md) | 2.0.0 | production | algorithm | QVGA camera frames → LED on/off regions (connected components), consumed by the closed-loop tasks |
+| [ledwatch](modules/ledwatch/1.0.0/doc.md) | 1.0.0 | production | algorithm | the superseded abi=1 build (retired camera imports — link-refused on fw ≥ 0.3.0) |
+| [st7789](modules/st7789/1.0.0/doc.md) | 1.0.0 | production | driver | ST7789V 240x240 TFT panel over CS-less SPI — the first `driver` module |
+| [gc2145](modules/gc2145/1.0.0/doc.md) | 1.0.0 | production | sensor-profile | the GC2145 bring-up sequence as module data + code — the first abi=2 module |
+| [jpge](modules/jpge/1.0.0/doc.md) | 1.0.0 | production | codec | camera frames → JPEG or raw RGB565 out the stream — the first `codec` module |
+
+`release` is the index's `kind` axis (`production` | `test-canary` —
+what the daemon surfaces verbatim at fetch/push time); the module
+kind (`driver` / `sensor-profile` / `algorithm` / `codec`) is the
+descriptive vocabulary carried by each meta.json and doc.md.
+
+## Module ABI (abi = 1 — the 2026-11-11 recarve)
 
 A module is a `wasm32` build (wasi-sdk, no WASI imports) that:
 
@@ -30,38 +40,44 @@ A module is a `wasm32` build (wasi-sdk, no WASI imports) that:
   return is a single packed `u64 = (result_ptr << 32) | result_len`
   pointing at the module's own msgpack result (C has no multi-value
   returns — the pair rides in one i64).
-- imports host functions only from the `xuansi` namespace (9 symbols —
-  see `src/xuansi_host.h`, the per-symbol template). Every host
-  function is `void`: results are written through out-parameters into
-  the module's linear memory; errors surface as wasm exceptions.
+- imports host functions only from the `xuansi` namespace (16 active
+  symbols — see `src/xuansi_host.h`, the per-symbol template; the
+  signature source is the firmware's `tools/wasm/xuansi_host.h`,
+  mirrored here). Every host function is `void`: results are written
+  through out-parameters into the module's linear memory; errors
+  surface as wasm exceptions.
+
+**The B15 recarve (ruled 2026-11-11)**: the ABI number is **1
+again** — a clean recarve. The old abi=1 and abi=2 are retired with
+fw 0.5.0 (wave-3; during wave-2 the load gate still accepts {1,2}).
+The recarved 1 is the **unified host table** (the abi=2 i2c×4 + cam×5
+families included; the retired `camera_frame_get`/`camera_info` names
+gone) plus the **initial == max linear-memory freeze** (a static
+footprint for the memory-admission budget — the fw loader refuses
+`initial != max` and max-absent shapes with the bytes in the
+refusal). One contract axis from here on: module ABI and bench
+`api_version` are the same 1.
 
 Limits (frozen): args/result msgpack ≤ 8192B, container depth ≤ 8,
-module file ≤ 256KB, module memory 256KB initial / 1MB max.
+module file ≤ 256KB, module memory = one fixed allocation
+(initial == max; 256KB the default, per-module pinnable up to 1MB).
+The value domain carries float64 (binary64; integers exact to
+|v| ≤ 2^53; NaN/±Inf honestly refused).
 
-### abi = 2 (camera migration, 2026-11-09)
+The full machine-readable reference — host table, call convention,
+value domain, lifecycle, error faces, the eight Lua boundary
+conditions, the bench.* signature table, the caps key table — is
+generated single-source into [`abi-reference.json`](abi-reference.json)
+(+ [`abi-reference.md`](abi-reference.md), human rendering) by
+[`tools/gen-abi-reference/`](tools/gen-abi-reference/); the daemon
+embeds the JSON for its `xuansi_abi_reference` tool.
 
-The camera-migration wave revised the symbol table — a one-time
-exemption while the project had no external users (from abi=3 on the
-table is strictly additive again):
-
-- **new (9)**: `i2c_config`, `i2c_write`, `i2c_read`, `i2c_writeread`
-  (self-configured I2C master, pins claimed prim=i2c) and `cam_xclk`,
-  `cam_start`, `cam_stop`, `cam_frame_get`, `cam_frame_info` (the
-  parallel-capture DVP stream; `cam_frame_get` hands the frame's
-  geometry out through w/h outs).
-- **retired (2)**: `camera_frame_get` / `camera_info`, renamed onto
-  `cam_frame_get` (geometry now rides the frame call) /
-  `cam_frame_info` (reshaped to w/h/pixfmt/on). An abi=1 binary
-  importing the retired names is refused at link time; the rest of
-  the abi=1 face is untouched (st7789@1 loads as-is; ledwatch
-  recompiled to 2.0.0 for the rename).
-
-A module declares abi=2 with `#define XUANSI_ABI 2` before including
-`src/xuansi_host.h`; the loader gate accepts abi∈{1,2}.
-
-Further symbol additions or semantic changes mean a new abi version —
-from abi=3 on the table is strictly additive (the abi=2 retirements
-were the one-time exemption above).
+Historical abi=2 note (kept for the record; the rename wave's
+one-time exemption): `i2c_config`/`i2c_write`/`i2c_read`/
+`i2c_writeread` and `cam_xclk`/`cam_start`/`cam_stop`/
+`cam_frame_get`/`cam_frame_info` replaced the retired
+`camera_frame_get`/`camera_info`; an abi=1 binary importing the
+retired names is refused at link time.
 
 ## Delivery track: dual artifacts (`.wasm` + `.aot`)
 
@@ -99,7 +115,7 @@ Two lane notes carried from the toolchain surgery tasks (T9/T10):
   data heap as one `xuansi.literal` section; the LLVM-side `addmi`
   expansion bounds the addressable pool span at roughly 32KB, so a
   module whose literal mass grows past that is the practical size
-  ceiling of the surgery lane (none of the five modules approaches it;
+  ceiling of the surgery lane (none of the modules approaches it;
   the compiler fails loudly past the encodable span, never silently).
 - **default-ON pairing** — the surgery codegen is the xtensa DEFAULT
   on the toolchain-v3 wamrc, and it is paired by construction:
@@ -110,276 +126,6 @@ Two lane notes carried from the toolchain surgery tasks (T9/T10):
   (fw 0.3.x only — fw 0.4.0 retired it and refuses instead) — there
   is no silent mixing. `--disable-xuansi-surgery` on the fork wamrc
   rebuilds the stock lane explicitly.
-
-## ledwatch (algorithm module)
-
-`ledwatch@1.0.0` turns QVGA RGB565 camera frames into LED on/off
-regions — the analyze() output face is consumed verbatim by the
-bench's display and closed-loop tasks:
-
-```lua
-bench.wasm.call("ledwatch", "analyze", cfg)
--- cfg (all optional, unknown keys ignored):
---   threshold      0..255, default 128  (lit = luma >= threshold)
---   min_area       default 16            (smaller regions dropped)
---   max_regions    1..32, default 8      (result cap)
---   discard_first  default true          (consume one frame first —
---                                         unconverged AWB after camera-on;
---                                         stateless: true = exactly two
---                                         camera_frame_get calls per analyze)
--- returns:
---   { regions = { {x,y,w,h,area,luma_mean,r_mean,g_mean,b_mean}, ... },
---     frame   = { w = 320, h = 240 } }
-```
-
-Regions are sorted by area (largest first) and capped at
-`max_regions`. All means are integers 0..255 (the frozen int-only
-value bridge carries no floats): RGB565 components replicated into
-8 bits, means rounded to nearest, luma = BT.601 integer approximation
-`(77R + 150G + 29B) >> 8` (pure red is luma 76 — pass a lower
-threshold when hunting red-only LEDs). The camera must already be on
-at QVGA (caller's responsibility, same contract as hello's
-`cam_frame`); camera-off or larger framesizes surface as the host's
-`rt` exception.
-
-Pipeline: luma → threshold → two-pass connected-component labelling
-(4-connectivity, union-find with path compression, u16 label map in
-linear memory) → per-label area → top-N selection → stats pass
-(bbox + means). The u16 label space is overflow-proof at QVGA: labels
-are only created by lit pixels whose left/up neighbours are dark (a
-4-independent set, at most w·h/2 = 38,400 < 65,535) — the
-checkerboard vector pins the worst case.
-
-ledwatch pins `--initial-memory=720896` (11 pages): its CCL working
-set (~627KB: frame + label map + per-label arrays) plus the wasm
-stack. Through the abi=1 waves the WAMR pool was 1MB: one ledwatch +
-one hello co-load fit it; two ledwatch instances did not (the loader
-refuses with an honest out-of-memory error). The abi=2 wave widened
-the pool to 2MB — jpge's 917,504B static layout beside ledwatch no
-longer fits 1MB — and co-load budgets now read against 2MB (see
-"Agent camera recipe" below).
-
-## st7789 (driver module)
-
-`st7789@1.0.0` drives the bench's ST7789V 240x240 TFT panel — the
-first `driver` module: Lua asks, the module drives real hardware
-(SPI + GPIO) through the frozen host table. Board facts compiled in:
-SCL=41, SDA(MOSI)=42, RES=47, DC=21, backlight tied to 3V3, **no CS**
-(the bus is dedicated to the panel — exactly the abi=1 CS-less
-engine, `no_cs=1`). MISO is passed as **pin 14, legal but unwired**:
-the v1 engine's `pins_valid` wants 0..47 on all three bus pins, so the
-frozen doc's "miso=-1 = absent" convention is not actually accepted
-(`rc=-3`, hit and recorded by B10-T6's on-board conflict vector);
-tx-only transfers never read MISO. (Fix-round-1: was pin 13 — that is
-the camera PCLK, and the engine holds the claim for the module's whole
-loaded lifetime, so MISO=13 made st7789 and the camera mutually
-exclusive; 14 is free outside the camera epoch's pin set.)
-
-```lua
-bench.wasm.call("st7789", "init", {x_offset=0, mode=3, invon=true})
-bench.wasm.call("st7789", "clear", 0xF800)       -- solid red
-bench.wasm.call("st7789", "pattern", "border")   -- offset probe
-bench.wasm.call("st7789", "blit", buf_off)       -- full frame (115,200B)
-bench.wasm.call("st7789", "deinit")
-```
-
-- **init cfg** (all optional): `x_offset` 0..80 clamped — the glass
-  start offset. Geometry: the ST7789V RAM is 240 sources (CASET) x 320
-  gates (RASET); a 240x240 glass bonds all 240 sources and 240 of the
-  320 gates, so the panel-specific offset lands on **RASET** at
-  MADCTL=0x00 portrait (the "x offset 80" lore from landscape-default
-  libraries is the same offset after an axis swap). `mode` 0..3
-  (default 3 = CPOL1/CPHA2, the ST7789 4-line sample edge);
-  `invon` (default true — the common 240x240 IPS glass needs display
-  inversion for true colors). ~250ms of delays inside one call.
-- **Wire order**: frames are RGB565 **hi byte first** — the same order
-  the GC2145 camera delivers, so a QVGA crop can be blitted verbatim.
-  Full frame = 115,200B in 29 `spi_xfer` chunks (engine cap 4096B).
-- **external frames** (P3-T2): `init`'s reply publishes `xfer_lo` —
-  the overlap-free floor. Host-side, xfer the frame to
-  `[xfer_lo, xfer_lo+115200)` (e.g. `bench.wasm.xfer(src, src_off,
-  "st7789", xfer_lo, 115200)`), then `blit(xfer_lo)`. The window
-  `[xfer_lo, 146944]` is provably disjoint from the module's own
-  statics (the floor is self-derived from the statics' addresses at
-  build time); the historical `[8, 146944]` window covered .rodata and
-  the state scalars — a legal-looking full-frame xfer there corrupted
-  the consumer instance (B12-P1 T8 FINDING-B; fixed in place). The
-  span may cover the wasm stack above the statics: inter-call stack
-  bytes are dead by wasm semantics (frames are rebuilt per call).
-- **patterns**: `full` (white, fb path) / `border` (four 8px white
-  partial-window strips at the glass edge — the offset probe: flush at
-  the edge = right candidate, inset ~80 rows = wrong) / `quad` (R/G/B/W
-  quadrants) / `red_rect` (black + centered 100x100 red). Every draw op
-  returns `{fill_ms, xfer_ms, total_ms, bytes, chunks}` measured with
-  `millis()` — under fast-interp the wasm-side fill loop dominates,
-  the engine moves the bytes DMA-side.
-- **deinit** sleeps the panel but keeps the spi/gpio claims (abi=1 has
-  no release host fn) — `session_reset` of the loader session releases
-  them, like every wasm claim. A held spi slot makes `init` raise the
-  host's rt exception (owner conflict) — the conflict vector is pinned
-  natively (T14) and on the board (HIL S50).
-- Errors are clean `{error=...}` maps (draw-before-init, blit bounds,
-  unknown pattern kind); host-level refusals surface as rt exceptions.
-- st7789 uses the default 256KB initial memory (fb 115KB + stage/out/
-  heap + the wasm stack) — hello's budget class.
-
-## gc2145 (sensor-profile module — the first abi=2 kind)
-
-`gc2145@1.0.0` is the B12 camera-migration wave's sensor profile: the
-GC2145 bring-up sequence as **module data + module code** — the whole
-"driver lives in wasm" thesis. The host supplies only the raw abi=2
-natives (i2c×4 + cam×5); every register decision is module-owned:
-
-```lua
-bench.wasm.call("gc2145", "init", {framesize="QVGA"})  -- or "VGA"
-bench.wasm.call("gc2145", "info")                      -- passthrough + state
-bench.wasm.call("gc2145", "off")                       -- cam_stop, idempotent
-```
-
-- **init sequence**: (cam_stop + >=1000ms settle if a stream is on) →
-  `cam_xclk(20MHz)` → 2000ms warmup in 100ms slices →
-  `i2c_config(slot0, SDA=4, SCL=5, 100kHz)` → PID probe
-  (`i2c_writeread {0xF0}`/`{0xF1}` @0x3C; mismatch → `{error, got,
-  want}` carrying the READ pid) → **soft reset first** (`0xFE<-0xE0`,
-  100ms — first-class module knowledge; the vendored esp32-camera
-  driver hides it in its probe path) → the full 582-pair init table
-  (per-register `i2c_write`, wire-faithful; transcribed from
-  espressif/esp32-camera 2.1.8, Apache-2.0, guarded by count+hash in
-  the native test) → 100ms → per-framesize subsample geometry deltas
-  (QVGA 320×240 / VGA 640×480, both 1/2-subsample) → RGB565 format
-  regs → `cam_start(w,h,0)`.
-- **framesize switch** re-runs the whole sequence (soft reset
-  included) after cam_stop + settle; **off** is cam_stop (host
-  idempotent) + module off; **info** is `cam_frame_info` passthrough
-  plus the module's last framesize.
-- **known claim asymmetry (F-3)**: the SCCB pins 4/5 i2c claim
-  persists across `off()` (the i2c face has no release); it clears on
-  session reset — meanwhile an op-path capture wanting those pins is
-  refused with a message naming the pin and owner.
-- Static memory only (instance heap_size=0): table in .rodata, §3.1
-  args-slot reuse; default 256KB initial memory (~4KB used).
-- `fw_compat: {wasm>=0.3.0}` — needs the abi=2 host table (fw 0.3.0);
-  the retired abi=1 camera names are NOT imported.
-- Board exercise is B12-T8 (the bench camera is stalled on a physical
-  issue; the module is native-tested against a fake i2c host +
-  programmable PID + trap channel: 40 checks).
-
-## jpge (codec module — the first of its kind)
-
-`jpge@1.0.0` is the camera-path **codec**: frames in (camera), encoded
-or raw bytes out (stream ch=2). It vendors the exact JPEG encoder the
-board's native path used (esp32-camera 2.1.8 jpge; per-scanline
-RGB565→RGB888 conversion, H2V2, the `frame2jpg` quality semantics)
-behind the abi=2 host face — `cam_frame_get` hands the geometry out
-with the frame, `stream_send` (host-stamped `"jpge"`, ch=2) is the
-egress. The B12-P0 calibration artifact (0.1.0, never indexed) proved
-the cost model; this is its formal successor. Source layout differs
-from the pure-C modules by exactly one thing: `src/jpge/jpge.cpp`
-(the vendored C++ encoder core, `-fno-rtti -fno-exceptions` — the one
-sanctioned C-flag-set deviation, see `build.sh`) linked beside the C
-wrapper, and the native test is a two-TU build (see `test_jpge.c`'s
-header). The module imports `xuansi.{cam_frame_get,millis,
-stream_send}` plus `env.{memcpy,memset}` (WAMR libc-builtin — LLVM
-lowers the wrapper's byte-loop mem helpers to those imports).
-
-```lua
-bench.wasm.call("jpge", "grab")                 -- {off,len,w,h}
-bench.wasm.call("jpge", "encode", {quality=80}) -- {off,len} (last grab)
-bench.wasm.call("jpge", "shot",   {quality=80}) -- {len,w,h,enc_ms}
-                                                --   + one ch=2 JPEG frame
-bench.wasm.call("jpge", "stream_raw")           -- {len,w,h}
-                                                --   + one ch=2 raw frame
-```
-
-`shot` = grab + encode (`enc_ms` spans the encode only) + SOI/EOI gate
-+ one `stream_send`. `stream_raw` = grab + one `stream_send` of the
-RAW RGB565 frame (`len = w*h*2`) — the generic CV egress, no JPEG.
-The host chunks payloads at 65,526 − 5B (the name stamp) = 65,521B;
-VGA JPEGs and `stream_raw` VGA (614,400B = 10 chunks) are first-class
-shapes, natively tested against a chunk-emulating sink. Errors are
-`{error=...}` maps (no frame, encoder overflow, non-JPEG output); a
-TX-full/OOM mid-stream truncation answers the honest numbers
-`{error, len, sent, w, h[, enc_ms]}` — exactly how much of the frame
-survived the wire. Host refusals (camera off, frame over cap) raise
-rt as usual.
-
-**Honest interp risk** (B12-P0 measured; the VM-task watchdog kills a
-single wasm call > 5s): VGA q80 encode ~15s+, QVGA q60 ~3.9s — VGA
-shots WILL trip the TWDT on the interpreter; QVGA q<=60 is the
-measured interp-safe class. `shot` deliberately stays one call; the
-resolution is the AOT track (auxiliary `.aot`, hash-recorded), not
-slice APIs.
-
-Linear memory: static VGA-capable layout pinned at
-`--initial-memory=917504` (frame 614.4KB + JPEG out 128KB + encoder
-MCU pool 30.7KB + misc + 64KB stack); the one dynamic allocation inside
-the encoder (the MCU line pool) is a fixed arena with its high-water
-tracked — 15,360B at QVGA / 30,720B at VGA, asserted natively in
-`test_jpge.c` (T09).
-
-## Repository layout
-
-```
-index.json                  # the module index (schema below; single
-                            # source for "what is published")
-toolchain-index.json        # the pinned-toolchain index (see
-                            # "Toolchain"); served raw to the daemon
-modules/<name>/<ver>/       # built artifacts, committed:
-                            #   <name>.wasm           deliverable (in index files[])
-                            #   <name>.aot            auxiliary (hash in meta only)
-                            #   <name>.meta.json      entry-function table + provenance
-src/xuansi_host.h           # shared ABI declarations (module-side)
-src/<name>/<name>.c         # module source (canonical home)
-src/<name>/test_<name>.c    # native unit test + stub host
-src/<name>/VERSION          # e.g. "1.0.0"
-build.sh                    # wasi-sdk + wamrc build (all modules or by name)
-tools/verify_index.py       # rebuild-vs-index hash comparison
-tools/verify_tcindex.py     # toolchain-index.json structure check
-.github/workflows/ci.yml    # CI: build / verify / native tests
-```
-
-`hello.c` was migrated from the firmware tree at the ABI-freeze batch;
-the firmware's copy is frozen there as build evidence — this repository
-is the canonical home for module sources from that point on.
-
-## index.json schema
-
-```json
-{
-  "index_ver": 1,
-  "modules": [
-    {
-      "name": "hello",
-      "kind": "driver",
-      "version": "1.0.0",
-      "abi": 1,
-      "files": [
-        { "path": "modules/hello/1.0.0/hello.wasm",
-          "sha256": "<hex>", "bytes": 5691 }
-      ],
-      "src_commit": "<git commit of src/hello/hello.c>"
-    }
-  ]
-}
-```
-
-`kind` is `"driver" | "sensor-profile" | "algorithm" | "codec"`.
-
-**`codec`** — landed with `jpge@1.0.0` (B12-T6, the first of its
-kind): transform modules — frames or bytes in (camera), encoded or
-re-serialized bytes out (stream ch=2), no hardware claim of their own.
-The index schema passes `kind` through verbatim (the daemon's
-driver-fetch chain treats it as an opaque label); `codec` entries
-carry `fw_compat` like `sensor-profile` (`{"wasm": ">=0.3.0"}` — the
-abi=2 host table).
-
-**`sensor-profile`** — landed with `gc2145@1.0.0` (B12-T5, the first
-abi=2 module): hot-loadable sensor description modules (SCCB register
-sequences, timing parameters, frame geometry, pixel format) so a new
-DVP sensor becomes a data file instead of a firmware rebuild. The
-gc2145 entry additionally carries `fw_compat` (the fw floor the
-module's imports need — `{"wasm": ">=0.3.0"}` for the abi=2 host
-table); the daemon's driver-fetch chain reads it (B12-T8).
 
 ## Agent camera recipe (photo walkthrough)
 
@@ -393,7 +139,7 @@ board/code arguments as usual):
 xuansi_driver_fetch{name:"gc2145"} / {name:"jpge"}     # 缺省 latest
 xuansi_driver_push ×2
 xuansi_run_lua{budget_ms:10000, code: load×2 → gc2145.init{framesize:"VGA"}
-              → jpge.shot{quality:80} → gc2145.off()}   # 冷板收尾
+               → jpge.shot{quality:80} → gc2145.off()}   # 冷板收尾
   ↳ frames=[{ch:2,name:"jpge",data_b64}] → agent 存檔＋sha256
 ```
 
@@ -431,7 +177,7 @@ last step**: it stops the stream, releases the camera pins (the DVP
 set plus XCLK) and hands the frame-buffer memory back; the call is
 idempotent. The documented F-3 exception still holds — the SCCB i2c
 claim on pins 4/5 persists across `off()` and clears on session reset
-(see "gc2145" above).
+(see the gc2145 doc.md).
 
 **VGA is the measured recipe shape** (P3 AOT landed, measured
 2026-11-11): on the surgery-`.aot` lane — what the paired push loads —
@@ -466,7 +212,12 @@ additionally parks the ~600KB DVP frame buffer on the same PSRAM
 co-residency under a VGA scene is unmeasured (three-module co-residency
 under a VGA scene measured green on the 2026-11-11 P3 run); the
 interpreter lane pins QVGA (note above), which is the shape the
-four-module runs were measured at.
+four-module runs were measured at. Since the B15 wave the account is
+explicit: every meta carries the module's static footprint
+(`footprint`: initial/max from the `.wasm` memory section; text/pool
+from the `.aot` container) and the fw load gate pre-checks
+Σ(footprints) against `wasm_memory_budget_bytes` with the arithmetic
+in the refusal (`bench.wasm.plan` is the dry-run).
 
 **No camera tool on the MCP face — assemble state from the modules**:
 the dedicated camera status/capture/off tools are gone; camera
@@ -476,6 +227,94 @@ two existing paths: `bench.wasm.call("gc2145", "info")` — the host
 camera-state passthrough plus the module's last framesize — and the
 `diag.pins` bench op, the pin-claim table (which owner holds which
 pin).
+
+## Repository layout
+
+```
+index.json                  # the module index (schema below; single
+                            # source for "what is published")
+abi-reference.json/.md      # the GENERATED ABI reference (host table,
+                            # conventions, boundaries, bench/caps tables)
+                            # — tools/gen-abi-reference/, CI drift-locked
+toolchain-index.json        # the pinned-toolchain index (see
+                            # "Toolchain"); served raw to the daemon
+modules/<name>/<ver>/       # built artifacts + docs, committed:
+                            #   <name>.wasm           deliverable (in index files[])
+                            #   <name>.aot            auxiliary (hash in meta only)
+                            #   <name>.meta.json      entry table + provenance
+                            #                       + doc/release/footprint fields
+                            #   doc.md                the module's doc face
+                            #                       (ops/measured/wiring — the
+                            #                       extractor embeds it into meta)
+src/xuansi_host.h           # shared ABI declarations (module-side mirror
+                            # of the fw signature source)
+src/<name>/<name>.c         # module source (canonical home)
+src/<name>/test_<name>.c    # native unit test + stub host
+src/<name>/VERSION          # e.g. "1.0.0"
+build.sh                    # wasi-sdk + wamrc build (all modules or by name;
+                            # --next = the recarved-ABI-1 lane -> staging/)
+staging/                    # git-ignored: recarved-ABI-1 products awaiting
+                            # the wave-3 republish (NOT in the index)
+tools/extract_doc.py        # doc.md -> meta doc/release/footprint embed +
+                            # artifact footprint parser (CI parity)
+tools/gen-abi-reference/    # the ABI reference generator + curated sidecar
+tools/verify_index.py       # rebuild-vs-index hash comparison
+tools/verify_tcindex.py     # toolchain-index.json structure check
+.github/workflows/ci.yml    # CI: build / verify / native / generated
+```
+
+`hello.c` was migrated from the firmware tree at the ABI-freeze batch;
+the firmware's copy is frozen there as build evidence — this repository
+is the canonical home for module sources from that point on.
+
+## index.json schema
+
+```json
+{
+  "index_ver": 1,
+  "modules": [
+    {
+      "name": "hello",
+      "kind": "test-canary",
+      "version": "1.0.0",
+      "abi": 1,
+      "files": [
+        { "path": "modules/hello/1.0.0/hello.wasm",
+          "sha256": "<hex>", "bytes": 5714 }
+      ],
+      "src_commit": "<git commit of src/hello/hello.c>"
+    }
+  ]
+}
+```
+
+`kind` is the **release class** — `"production" | "test-canary"` (the
+canary vocabulary the daemon passes verbatim through fetch/manifest/
+push replies). The descriptive module kind (`"driver" |
+"sensor-profile" | "algorithm" | "codec"`) lives in each meta.json's
+`kind` and in the doc.md header. A `test-canary` entry is a published
+module whose FACE is deliberately a test vector (hello@1.0.0 keeps the
+retired camera imports — it exists to be refused). `fw_compat` entries
+(the fw floor a module's imports need — `{"wasm": ">=0.3.0"}` for the
+abi=2 host table) ride the index and meta as before.
+
+### meta.json (per version, beside the artifacts)
+
+The human-owned halves: identity (`name`/`kind`/`version`/`abi`),
+provenance (`src_commit`, `imports`, `entries`, `linear_memory`,
+`hardware`, `toolchain`, `deliverable`, `aot`, `auxiliary`,
+`fw_compat`). Three fields are pipeline-managed by
+`tools/extract_doc.py` (CI parity-locked against `doc.md` + the
+artifacts — edit the doc, never the meta):
+
+- `release` — the release class (mirrors the index `kind`)
+- `doc` — `{ops:[{name,args,result,semantics}], measured:{...}}`
+  extracted from doc.md's Ops table + Measured list (the
+  `xuansi_module_doc` face reads this)
+- `footprint` — the admission numbers parsed from the artifacts
+  themselves: `.wasm` memory section `{initial_bytes, max_bytes}` and
+  `.aot` `{initial_bytes, text_bytes, pool_bytes}` (the same walk the
+  fw loader does — numbers can't drift from the bytes)
 
 ## Toolchain (pinned, two generations)
 
@@ -503,7 +342,12 @@ Build flags are frozen in `build.sh` (`-O2 -fno-jump-tables -nostdlib`,
 ABI-freeze 256KB initial, ledwatch pins 11 pages — see
 `init_mem_for()`); exports are declared with `export_name` attributes.
 Rebuilds are deterministic — CI re-derives every hash and compares it
-against `index.json` and each `meta.json` on every push.
+against `index.json` and each `meta.json` on every push. **The
+`--max-memory=1048576` half is the LEGACY lane** (pre-recarve
+artifacts): the recarved ABI 1 freezes `max == initial`, and
+`./build.sh --next` builds that lane into `staging/` for the wave-3
+republish — the committed artifacts keep the legacy flag set until
+that flip, byte-for-byte.
 
 ## User-compiled modules (agent path)
 
@@ -634,21 +478,25 @@ tree; the two consumer routes above are the honest ways to use one.
 ## Building and testing
 
 ```sh
-./build.sh              # build all modules -> modules/<name>/<ver>/
+./build.sh              # build all published modules -> modules/<name>/<ver>/
 ./build.sh hello        # one module
 ./build.sh --check      # rebuild into a scratch dir, compare hashes
+./build.sh --next       # the recarved-ABI-1 lane (initial==max) -> staging/
+                        #   (st7789 migration + hclock; NOT published — wave-3)
+python3 tools/extract_doc.py --check      # doc.md <-> meta doc/release/footprint parity
+python3 tools/gen-abi-reference/gen.py --check   # abi-reference drift-lock
 cc -DXUANSI_NATIVE_TEST -Wall -Wextra -I src -I src/hello \
    src/hello/test_hello.c -o /tmp/test_hello && /tmp/test_hello
 ```
 
 The native test compiles the module with the host toolchain against a
-stub host (`XUANSI_NATIVE_TEST` seam in `hello.c`/`xuansi_host.h`; the
-wasm32 build is unchanged — the committed `hello.wasm` is
-byte-identical to the pre-seam build).
+stub host (`XUANSI_NATIVE_TEST` seam in the module sources and
+`xuansi_host.h`; the wasm32 build is unchanged — the committed
+`.wasm` is byte-identical to the pre-seam build).
 
 ## CI
 
-Three legs on every push and PR (`.github/workflows/ci.yml`):
+Four legs on every push and PR (`.github/workflows/ci.yml`):
 
 1. **build** — install the pinned toolchain (cached), `./build.sh`,
    upload the artifacts;
@@ -656,7 +504,11 @@ Three legs on every push and PR (`.github/workflows/ci.yml`):
    `index.json` (hard gate on deliverable `.wasm`) and each
    `meta.json` (auxiliary `.aot`);
 3. **native** — compile and run every `src/*/test_*.c` with the host
-   gcc against its stub host.
+   gcc against its stub host;
+4. **generated** — the two parity locks: `tools/extract_doc.py
+   --check` (doc.md ↔ meta doc/release/footprint ↔ artifact bytes)
+   and `tools/gen-abi-reference/gen.py --check` (abi-reference
+   byte-stable against `src/xuansi_host.h` + the sidecar).
 
 The first run after a cache miss builds wamrc's LLVM from source
 (~1h); cached afterward.
