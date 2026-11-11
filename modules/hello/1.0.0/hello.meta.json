@@ -1,6 +1,7 @@
 {
   "name": "hello",
   "kind": "driver",
+  "release": "test-canary",
   "version": "1.0.0",
   "abi": 1,
   "src_commit": "234d7ccae4a30402a7346c6ab8592d16e45a150e",
@@ -72,6 +73,97 @@
       "desc": "camera_info probe + one QVGA RGB565 frame; the camera must already be on (caller's responsibility)"
     }
   ],
+  "doc": {
+    "ops": [
+      {
+        "name": "echo",
+        "args": "args...",
+        "result": "args...",
+        "semantics": "byte-level msgpack round-trip of the argument array"
+      },
+      {
+        "name": "add",
+        "args": "[a, b]",
+        "result": "[a+b]",
+        "semantics": "module-side msgpack decode+encode proof"
+      },
+      {
+        "name": "gpio_echo",
+        "args": "[out_pin?, in_pin?]",
+        "result": "[hi, lo]",
+        "semantics": "drive out (default 1), read in (default 2), drive low, read again"
+      },
+      {
+        "name": "now",
+        "args": "[]",
+        "result": "[ms]",
+        "semantics": "boot milliseconds via the out-param convention"
+      },
+      {
+        "name": "now2x",
+        "args": "[]",
+        "result": "[ms, ms, ms]",
+        "semantics": "three consecutive live snapshots (out-param landing proof)"
+      },
+      {
+        "name": "timed_delay",
+        "args": "[]",
+        "result": "[dt_ms]",
+        "semantics": "millis → delay_ms(120) → millis"
+      },
+      {
+        "name": "delay_wrap",
+        "args": "[]",
+        "result": "raises",
+        "semantics": "delay(100) then delay(0xFFFFFFF8): pins the host budget-cap refusal (no u32 wrap bypass)"
+      },
+      {
+        "name": "stream_out",
+        "args": "[]",
+        "result": "[sent]",
+        "semantics": "stream_send an 8-byte sample (host stamps ch=2 + module name)"
+      },
+      {
+        "name": "spi_selftest",
+        "args": "[]",
+        "result": "[rx==tx]",
+        "semantics": "self-configure SPI loopback (sclk=14, mosi=12, miso=13, 1MHz, mode 0, CS-less) + full-duplex 8B"
+      },
+      {
+        "name": "spi_neg",
+        "args": "[]",
+        "result": "raises",
+        "semantics": "spi_config(no_cs=0): a CS bus is refused at abi=1 (negative proof of the host exception face)"
+      },
+      {
+        "name": "cam_frame",
+        "args": "[]",
+        "result": "[w, h, len]",
+        "semantics": "camera_info probe + one QVGA RGB565 frame; the camera must already be on (caller's responsibility)"
+      }
+    ],
+    "measured": {
+      "wasm_bytes": 5714,
+      "aot_bytes": 9016,
+      "initial_memory_bytes": 262144,
+      "aot_text_bytes": 6432,
+      "aot_pool_bytes": 500,
+      "max_memory_bytes": 1048576
+    }
+  },
+  "footprint": {
+    "wasm": {
+      "initial_bytes": 262144,
+      "max_bytes": 1048576
+    },
+    "aot": {
+      "esp32s3": {
+        "initial_bytes": 262144,
+        "text_bytes": 6432,
+        "pool_bytes": 500
+      }
+    }
+  },
   "deliverable": {
     "path": "modules/hello/1.0.0/hello.wasm",
     "sha256": "ae789210a99482df2fbc9607b4df177a2c97009e76807c2b8098ca944744c9b0",

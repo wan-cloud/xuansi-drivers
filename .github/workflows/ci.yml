@@ -245,3 +245,13 @@ jobs:
             found=1
           done
           test "$found" -eq 1
+
+  # B15 W2-T3: the doc/meta parity lock — no toolchain needed, so this
+  # leg fails fast (before the ~1h build) on any drift.
+  generated:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: doc.md <-> meta doc/release/footprint parity (extract_doc)
+        run: python3 tools/extract_doc.py --check

@@ -3,7 +3,7 @@
   "modules": [
     {
       "name": "hello",
-      "kind": "driver",
+      "kind": "test-canary",
       "version": "1.0.0",
       "abi": 1,
       "files": [
@@ -23,7 +23,7 @@
     },
     {
       "name": "ledwatch",
-      "kind": "algorithm",
+      "kind": "production",
       "version": "1.0.0",
       "abi": 1,
       "files": [
@@ -37,7 +37,7 @@
     },
     {
       "name": "ledwatch",
-      "kind": "algorithm",
+      "kind": "production",
       "version": "2.0.0",
       "abi": 2,
       "files": [
@@ -60,7 +60,7 @@
     },
     {
       "name": "st7789",
-      "kind": "driver",
+      "kind": "production",
       "version": "1.0.0",
       "abi": 1,
       "files": [
@@ -80,7 +80,7 @@
     },
     {
       "name": "gc2145",
-      "kind": "sensor-profile",
+      "kind": "production",
       "version": "1.0.0",
       "abi": 2,
       "files": [
@@ -103,7 +103,7 @@
     },
     {
       "name": "jpge",
-      "kind": "codec",
+      "kind": "production",
       "version": "1.0.0",
       "abi": 2,
       "files": [

@@ -1,6 +1,7 @@
 {
   "name": "gc2145",
   "kind": "sensor-profile",
+  "release": "production",
   "version": "1.0.0",
   "abi": 2,
   "src_commit": "1b688983c251a1a6d755113589505ecaa2dd6523",
@@ -43,6 +44,50 @@
       "desc": "cam_frame_info passthrough (host truth: w=h=0, on=0 while off) + module state; framesize = last requested (kept across off, absent before the first init). pixfmt 0 = RGB565."
     }
   ],
+  "doc": {
+    "ops": [
+      {
+        "name": "init",
+        "args": "[{framesize=\"QVGA\"|\"VGA\"}?]",
+        "result": "{ok, sensor, w, h, ms} | {error, got?, want?}",
+        "semantics": "full bring-up, default QVGA, unknown string = {error='unknown framesize'} BEFORE any hardware touch. Sequence: cam_stop + >=1000ms settle if a stream is on → cam_xclk(20MHz) → 2000ms warmup (100ms slices — GC2145 SCCB needs 1-2s after the clock starts) → i2c_config(slot0, SDA=4, SCL=5, 100kHz) → PID probe (i2c_writeread {0xF0}/{0xF1} @0x3C; mismatch → {error, got, want} carrying the READ pid, no side effects past the probe) → soft reset FIRST (0xFE<-0xE0, 100ms — first-class module knowledge the vendored esp32-camera driver hides in its probe path) → the full 582-pair init table as per-register i2c_write (wire-faithful — GC2145 SCCB has no documented burst auto-increment; transcribed from espressif/esp32-camera 2.1.8, Apache-2.0, guarded by count+hash in the native test) → 100ms → per-framesize subsample geometry deltas (QVGA 320x240 / VGA 640x480, both 1/2-subsample) → RGB565 format regs → cam_start(w,h,0). A framesize switch re-runs the WHOLE sequence (soft reset + PID probe included). ~2.4s of delay_ms inside one call (host cap 15000ms per call; slices keep the watchdog fed). Host failures (SCCB NACK, slot conflict, cam floor) propagate as the host's rt exception — never swallowed"
+      },
+      {
+        "name": "off",
+        "args": "[]",
+        "result": "{ok, on=0, ms}",
+        "semantics": "cam_stop (host idempotent: stop stream, release the 11 DVP + XCLK pin claims) + module off; safe before init and when repeated"
+      },
+      {
+        "name": "info",
+        "args": "[]",
+        "result": "{sensor, framesize?, w, h, pixfmt, on}",
+        "semantics": "cam_frame_info passthrough (ro, no sensor touch) plus the module's last framesize; stream off → w=h=0, on=0, pixfmt 0=RGB565"
+      }
+    ],
+    "measured": {
+      "wasm_bytes": 6905,
+      "aot_bytes": 11904,
+      "initial_memory_bytes": 262144,
+      "aot_text_bytes": 8784,
+      "aot_pool_bytes": 460,
+      "init_wall_ms": "~2400",
+      "max_memory_bytes": 1048576
+    }
+  },
+  "footprint": {
+    "wasm": {
+      "initial_bytes": 262144,
+      "max_bytes": 1048576
+    },
+    "aot": {
+      "esp32s3": {
+        "initial_bytes": 262144,
+        "text_bytes": 8784,
+        "pool_bytes": 460
+      }
+    }
+  },
   "linear_memory": {
     "initial_bytes": 262144,
     "max_bytes": 1048576,

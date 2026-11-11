@@ -1,6 +1,7 @@
 {
   "name": "ledwatch",
   "kind": "algorithm",
+  "release": "production",
   "version": "2.0.0",
   "abi": 2,
   "src_commit": "234d7ccae4a30402a7346c6ab8592d16e45a150e",
@@ -25,6 +26,38 @@
       "desc": "one QVGA frame -> lit regions sorted by area desc, capped at max_regions. cfg (all optional, unknown keys ignored): threshold 0..255 (default 128, lit = luma >= threshold), min_area (default 16), max_regions 1..32 (default 8), discard_first (default true: consume one frame first for AWB convergence — stateless, exactly two cam_frame_get calls). Means are integers 0..255 (no floats in the abi=1 value bridge); luma = BT.601 integer approx (77R+150G+29B)>>8 with 5/6-bit components replicated to 8 bits. Camera must be on at QVGA (caller's responsibility); camera-off or larger framesizes raise the host's rt exception. Behavior byte-identical to 1.0.0 — the only change is the abi=2 import face (cam_frame_get carries geometry; camera_info retired), recompiled for the abi=2 host table."
     }
   ],
+  "doc": {
+    "ops": [
+      {
+        "name": "analyze",
+        "args": "[cfg?]",
+        "result": "{regions=[{x,y,w,h,area,luma_mean,r_mean,g_mean,b_mean}], frame={w=320,h=240}}",
+        "semantics": "one QVGA frame → lit regions sorted by area (largest first), capped at max_regions; cfg (all optional, unknown keys ignored): threshold 0..255 default 128 (lit = luma >= threshold), min_area default 16 (smaller regions dropped), max_regions 1..32 default 8, discard_first default true (consume one frame first — unconverged AWB after camera-on; stateless: exactly two cam_frame_get calls per analyze)"
+      }
+    ],
+    "measured": {
+      "wasm_bytes": 7537,
+      "aot_bytes": 12744,
+      "initial_memory_bytes": 720896,
+      "aot_text_bytes": 11520,
+      "aot_pool_bytes": 244,
+      "max_memory_bytes": 1048576,
+      "coload_note": "co-loads with gc2145 + jpge + st7789 in the 2MB pool on the board (measured stable across both load orders + unload/reload cycles, 2026-11-09)"
+    }
+  },
+  "footprint": {
+    "wasm": {
+      "initial_bytes": 720896,
+      "max_bytes": 1048576
+    },
+    "aot": {
+      "esp32s3": {
+        "initial_bytes": 720896,
+        "text_bytes": 11520,
+        "pool_bytes": 244
+      }
+    }
+  },
   "linear_memory": {
     "initial_bytes": 720896,
     "max_bytes": 1048576,

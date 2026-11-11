@@ -1,6 +1,7 @@
 {
   "name": "jpge",
   "kind": "codec",
+  "release": "production",
   "version": "1.0.0",
   "abi": 2,
   "src_commit": "748506a75184254ac01a6f9e52cdfa5318935700",
@@ -42,6 +43,59 @@
       "desc": "the generic CV egress: one cam_frame_get + one stream_send of the RAW RGB565 frame (len = w*h*2; no encode, no JPEG). VGA raw = 614,400B = 10 host chunks; truncation answers {error='stream_send truncated', len, sent, w, h} (no enc_ms — nothing was encoded). Natively tested against a chunk-emulating sink (wire byte-equality + chunk counts + mid-chunk TX-full)."
     }
   ],
+  "doc": {
+    "ops": [
+      {
+        "name": "grab",
+        "args": "[cfg?]",
+        "result": "{off, len, w, h} | {error}",
+        "semantics": "one cam_frame_get into the module's frame slot (camera must be on — caller's responsibility, gc2145's stream); no frame → {error='no frame'}"
+      },
+      {
+        "name": "encode",
+        "args": "[{quality=i:1..100}?]",
+        "result": "{off, len} | {error}",
+        "semantics": "encode the LAST grab in place; encoder overflow / non-JPEG output → {error} maps"
+      },
+      {
+        "name": "shot",
+        "args": "[{quality=i:1..100}?]",
+        "result": "{len, w, h, enc_ms} + one ch=2 JPEG frame | {error,...}",
+        "semantics": "grab + encode (enc_ms spans the encode only) + SOI/EOI gate + one stream_send"
+      },
+      {
+        "name": "stream_raw",
+        "args": "[]",
+        "result": "{len, w, h} + one ch=2 raw RGB565 frame | {error,...}",
+        "semantics": "grab + one stream_send of the RAW frame (len = w*h*2) — the generic CV egress, no JPEG"
+      }
+    ],
+    "measured": {
+      "wasm_bytes": 28642,
+      "aot_bytes": 83524,
+      "initial_memory_bytes": 917504,
+      "aot_text_bytes": 76416,
+      "aot_pool_bytes": 1708,
+      "mcu_pool_highwater_qvga_bytes": 15360,
+      "mcu_pool_highwater_vga_bytes": 30720,
+      "interp_vga_q80_ms": "over 15000",
+      "aot_vga_q80_ms": 1229,
+      "max_memory_bytes": 1048576
+    }
+  },
+  "footprint": {
+    "wasm": {
+      "initial_bytes": 917504,
+      "max_bytes": 1048576
+    },
+    "aot": {
+      "esp32s3": {
+        "initial_bytes": 917504,
+        "text_bytes": 76416,
+        "pool_bytes": 1708
+      }
+    }
+  },
   "linear_memory": {
     "initial_bytes": 917504,
     "max_bytes": 1048576,

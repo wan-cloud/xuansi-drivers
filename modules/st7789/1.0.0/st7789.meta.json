@@ -1,6 +1,7 @@
 {
   "name": "st7789",
   "kind": "driver",
+  "release": "production",
   "version": "1.0.0",
   "abi": 1,
   "src_commit": "234d7ccae4a30402a7346c6ab8592d16e45a150e",
@@ -49,6 +50,64 @@
       "desc": "DISPOFF + 20ms + SLPIN (panel to sleep). The spi slot and RES/DC pin claims REMAIN (abi=1 has no release host fn) — released by session_reset(loader) / vm.reopen like every wasm claim."
     }
   ],
+  "doc": {
+    "ops": [
+      {
+        "name": "init",
+        "args": "[cfg?]",
+        "result": "{ok, x_offset, mode, invon, xfer_lo, ms}",
+        "semantics": "spi_config(slot0, SCL=41, 40MHz, MOSI=42, MISO=14 legal-unwired, mode, no_cs=1) + hardware RES pulse + SLPOUT/COLMOD(16bit)/MADCTL(0x00)/INVON/CASET/RASET/DISPON. cfg keys all optional: x_offset 0..80 clamped (default 0 — the glass start offset; lands on RASET at MADCTL=0x00 since a 240x240 glass bonds all 240 sources and 240 of 320 gates), mode 0..3 clamped (default 3 = CPOL1/CPHA2, the ST7789 4-line sample edge), invon bool (default true — common 240x240 IPS glass needs inversion for true colors; eyeball-tunable). ~250ms of delays inside one call. A held spi slot surfaces as the host's rt exception (owner conflict). The reply publishes xfer_lo (P3-T2): the overlap-free floor for external frames"
+      },
+      {
+        "name": "clear",
+        "args": "[color565?]",
+        "result": "{ok, bytes, chunks, fill_ms, xfer_ms, total_ms}",
+        "semantics": "fb fill (wire-order RGB565 hi byte first) + full-frame stream; color default 0 (black); 115,200B in 29 spi_xfer chunks (engine cap 4096B/xfer)"
+      },
+      {
+        "name": "blit",
+        "args": "[buf_off?]",
+        "result": "{ok, bytes, chunks, xfer_ms, total_ms}",
+        "semantics": "stream one full frame (115,200B wire-order RGB565) from linear memory at buf_off; 0/absent = the module fb (pure re-stream, the SPI timing path). Nonzero must satisfy xfer_lo <= buf_off and buf_off+115200 <= 262144, where xfer_lo is the self-derived statics ceiling published by init (P3-T2, T8 FINDING-B: the historical floor of 8 covered the module's own statics — a legal-looking full-frame xfer there wrote the frame over .rodata and the state scalars). The frame span may cover the wasm stack above the statics: inter-call stack bytes are dead by wasm semantics. Same byte order as camera RGB565 frames (hi byte first) — a QVGA crop can be blitted verbatim. Violations → {error='blit offset out of bounds'}"
+      },
+      {
+        "name": "pattern",
+        "args": "[kind]",
+        "result": "{ok, kind, windows, bytes, chunks, fill_ms, xfer_ms, total_ms}",
+        "semantics": "kind: 'full' solid white (fb path); 'border' four 8px white partial-window strips at the glass edge (offset probe: flush at edge = x_offset right, inset ~80 rows = wrong candidate); 'quad' 120x120 quadrants TL=red TR=green BL=blue BR=white (partial windows; orientation/RGB-order eyeball); 'red_rect' black frame + centered 100x100 red at (70,70) (fb path; camera-contrast eyeball). Unknown/missing kind → {error}. Partial-window kinds report fill_ms 0 (stage fills counted in xfer_ms)"
+      },
+      {
+        "name": "deinit",
+        "args": "[]",
+        "result": "{ok, ms}",
+        "semantics": "DISPOFF + 20ms + SLPIN (panel to sleep). The spi slot and RES/DC pin claims REMAIN (abi=1 has no release host fn) — released by session_reset(loader) / vm.reopen, like every wasm claim"
+      }
+    ],
+    "measured": {
+      "wasm_bytes": 13487,
+      "aot_bytes": 24012,
+      "initial_memory_bytes": 262144,
+      "aot_text_bytes": 20484,
+      "aot_pool_bytes": 1244,
+      "full_frame_bytes": 115200,
+      "full_frame_chunks": 29,
+      "blit_window": "[130960, 146944]",
+      "max_memory_bytes": 1048576
+    }
+  },
+  "footprint": {
+    "wasm": {
+      "initial_bytes": 262144,
+      "max_bytes": 1048576
+    },
+    "aot": {
+      "esp32s3": {
+        "initial_bytes": 262144,
+        "text_bytes": 20484,
+        "pool_bytes": 1244
+      }
+    }
+  },
   "linear_memory": {
     "initial_bytes": 262144,
     "max_bytes": 1048576,
