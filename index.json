@@ -22,7 +22,7 @@
       "fw_compat": {
         "wasm": ">=0.5.0"
       },
-      "src_commit": "B15-W3-T2 flip — hash pinned in the follow-up commit"
+      "src_commit": "6875d6b959efc99c8513e6f02372ac4ae2a85e57"
     },
     {
       "name": "ledwatch",
@@ -45,7 +45,7 @@
       "fw_compat": {
         "wasm": ">=0.5.0"
       },
-      "src_commit": "B15-W3-T2 flip — hash pinned in the follow-up commit"
+      "src_commit": "6875d6b959efc99c8513e6f02372ac4ae2a85e57"
     },
     {
       "name": "gc2145",
@@ -68,7 +68,7 @@
       "fw_compat": {
         "wasm": ">=0.5.0"
       },
-      "src_commit": "B15-W3-T2 flip — hash pinned in the follow-up commit"
+      "src_commit": "6875d6b959efc99c8513e6f02372ac4ae2a85e57"
     },
     {
       "name": "jpge",
@@ -91,7 +91,7 @@
       "fw_compat": {
         "wasm": ">=0.5.0"
       },
-      "src_commit": "B15-W3-T2 flip — hash pinned in the follow-up commit"
+      "src_commit": "6875d6b959efc99c8513e6f02372ac4ae2a85e57"
     },
     {
       "name": "st7789",
@@ -114,7 +114,7 @@
       "fw_compat": {
         "wasm": ">=0.5.0"
       },
-      "src_commit": "B15-W3-T2 flip — hash pinned in the follow-up commit"
+      "src_commit": "6875d6b959efc99c8513e6f02372ac4ae2a85e57"
     },
     {
       "name": "hclock",

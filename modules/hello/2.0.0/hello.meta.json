@@ -4,7 +4,7 @@
   "release": "test-canary",
   "version": "2.0.0",
   "abi": 1,
-  "src_commit": "B15-W3-T2 flip (this commit) — the exact source this artifact was built from; hash pinned in the immediate follow-up commit",
+  "src_commit": "6875d6b959efc99c8513e6f02372ac4ae2a85e57",
   "src": "src/hello/hello.c",
   "entries": [
     {
