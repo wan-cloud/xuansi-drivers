@@ -4,7 +4,17 @@
 *.o
 *.tmp
 
+# B15 W2-T3: the recarved-ABI-1 staging lane (build.sh --next) —
+# st7789 migration + hclock products awaiting the W3-T2 republish.
+# Local-only on purpose: staged artifacts are NOT published (never in
+# index.json, never committed) until wave-3 flips the repo.
+/staging/
+
 # B12-P0 calibration artifact 0.1.0: local-only throwaway (never
 # indexed, never committed). The formal jpge@1.0.0 (abi=2, kind=codec)
 # IS committed under modules/jpge/1.0.0/ like every indexed module.
 /modules/jpge/0.1.0/
+
+# python bytecode (tools/ import scratch)
+__pycache__/
+*.pyc
