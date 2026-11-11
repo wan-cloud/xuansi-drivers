@@ -28,6 +28,15 @@
  * include (the default stays 1). camera_frame_get/camera_info further
  * down are the retired abi=1 names, kept only so historical modules
  * still compile.
+ *
+ * B15 RECARVE (ruled 2026-11-11): the ABI number is 1 AGAIN — a clean
+ * recarve; the old abi=1/abi=2 values are retired with fw 0.5.0 (the
+ * wave-2 load gate still accepts {1,2}). The recarved 1 = this whole
+ * unified table (the abi=2 additions included, the retired camera
+ * names gone) + the initial==max linear-memory freeze (build.sh --next
+ * pins the pair; the fw loader refuses initial != max shapes with the
+ * bytes in the refusal). From the recarve on, XUANSI_ABI stays 1 and
+ * the version axis is single: module ABI == bench api_version == 1.
  */
 #ifndef XUANSI_ABI
 #define XUANSI_ABI 1

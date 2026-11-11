@@ -108,6 +108,17 @@
 
 #include "xuansi_host.h"
 
+/* B15 ABI recarve (ruled 2026-11-11): the ABI number is 1 AGAIN — the
+ * clean recarve; the old abi=1/abi=2 are retired with fw 0.5.0. This
+ * module's import face (spi_config/spi_xfer/gpio_set/delay_ms/millis)
+ * is unchanged by the recarve — every symbol is in the unified table —
+ * so the declaration stays 1; what CHANGES for the recarved lane is
+ * the linear-memory freeze: initial == max (the static-footprint
+ * admission contract), i.e. build.sh --next pins
+ * --initial-memory=262144 --max-memory=262144 (the legacy published
+ * artifact carries the pre-recarve max=1MB and is honestly refused by
+ * the fw 0.5.0-era initial==max gate). The staged recarved products
+ * live in staging/ (W2-T3, 2026-11-12) — published at W3-T2. */
 #ifndef XUANSI_ABI_OVERRIDE
 #define XUANSI_ABI_OVERRIDE XUANSI_ABI
 #endif
@@ -314,7 +325,8 @@ static uint32_t statics_end(void)
 XUANSI_EXPORT("xuansi_abi")
 uint32_t xuansi_abi(void)
 {
-    return XUANSI_ABI_OVERRIDE;
+    return XUANSI_ABI_OVERRIDE;   /* 1 — the RECARVED ABI 1 (B15, 2026-11-11);
+                                   * see the recarve note above the include */
 }
 
 static uint64_t pack(uint32_t ptr, uint32_t len)
