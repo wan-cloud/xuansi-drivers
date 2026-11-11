@@ -255,3 +255,5 @@ jobs:
       - uses: actions/checkout@v4
       - name: doc.md <-> meta doc/release/footprint parity (extract_doc)
         run: python3 tools/extract_doc.py --check
+      - name: abi-reference drift-lock (gen-abi-reference)
+        run: python3 tools/gen-abi-reference/gen.py --check
