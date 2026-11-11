@@ -102,6 +102,13 @@ def sha256_text(s: str) -> str:
 
 def build(header_text: str, sidecar: dict):
     symbols = parse_header(header_text)
+    # the "eight Lua boundary conditions" claim (spec §4.14) is a count
+    # the seat copy repeats — hold it mechanically so a ninth rule or a
+    # lost one cannot slip through as a silent doc drift.
+    if len(sidecar["lua_boundaries"]) != 8:
+        raise SystemExit(f"sidecar.lua_boundaries: expected the EIGHT "
+                         f"boundary conditions, got "
+                         f"{len(sidecar['lua_boundaries'])}")
     retired_names = {k: v for k, v in sidecar["retired_symbols"].items()
                      if not k.startswith("_")}
     active, retired = [], []

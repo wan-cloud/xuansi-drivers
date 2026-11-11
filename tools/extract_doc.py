@@ -45,6 +45,7 @@ from pathlib import Path
 
 MANAGED = ("release", "doc", "footprint")
 RELEASES = ("production", "test-canary")
+ROOT = Path(__file__).resolve().parent.parent
 
 # --------------------------------------------------------------------------
 # doc.md parsing
@@ -56,7 +57,7 @@ _OP_ROW = re.compile(r"^\|\s*([^|]+?)\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|\s*([^
 _MEASURED = re.compile(r"^-\s+`([a-z0-9_]+)`\s+(?:—|-)\s+(.+?)$")
 
 
-def parse_doc_md(text: str):
+def parse_doc_md(text: str, src: str = "<doc.md>"):
     """Parse a doc.md into (meta {...}, ops [...], measured {...}).
 
     The anchors are deliberately boring:
@@ -66,6 +67,8 @@ def parse_doc_md(text: str):
         columns op/args/result/semantics (the header row names them);
       * measured = `- `key` — value...` list items under `## Measured`;
         the value is the first token, the rest is the note.
+    A table-shaped line under '## Ops' that does not parse as the
+    4-column shape raises (loud) instead of being skipped.
     """
     lines = text.splitlines()
     meta = {}
@@ -89,7 +92,7 @@ def parse_doc_md(text: str):
     measured = {}
     section = None
     table_header_seen = False
-    for s in lines:
+    for lineno, s in enumerate(lines, start=1):
         t = s.strip()
         if t.startswith("## "):
             section = t[3:].strip().lower()
@@ -101,6 +104,17 @@ def parse_doc_md(text: str):
             t2 = t.replace("\\|", "\x00")
             m = _OP_ROW.match(t2)
             if not m:
+                if t.startswith("|"):
+                    # a table-looking row that is NOT the 4-column ops
+                    # shape must fail LOUDLY — silently skipping it would
+                    # drop an op from meta while the parity leg stays
+                    # green (the drift would be invisible until a seat
+                    # consumer misses the op).
+                    raise SystemExit(
+                        f"{src}: '## Ops' row {lineno} is "
+                        f"table-shaped but does not parse as "
+                        f"'| op | args | result | semantics |' (4 cells): "
+                        f"{t[:100]!r}")
                 continue
             cells = tuple(c.strip().replace("\x00", "|") for c in m.groups())
             if not table_header_seen:
@@ -272,7 +286,8 @@ def module_footprint(vdir: Path, name: str):
 
 def managed_fields(vdir: Path, name: str):
     doc_path = vdir / "doc.md"
-    meta, ops, measured = parse_doc_md(doc_path.read_text())
+    meta, ops, measured = parse_doc_md(doc_path.read_text(),
+                                       src=str(doc_path.relative_to(ROOT)))
     fields = {
         "release": meta["release"],
         "doc": {"ops": ops, "measured": measured},
@@ -354,7 +369,7 @@ def iter_versions(root: Path):
 
 
 def main() -> int:
-    root = Path(__file__).resolve().parent.parent
+    root = ROOT
     mode = "--update" if "--update" in sys.argv else "--check"
     fails = 0
     for name, vdir, meta_path in iter_versions(root):

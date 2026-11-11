@@ -3,7 +3,7 @@
     "header": "src/xuansi_host.h",
     "header_sha256": "3a3dc8c82f30f05cb14bd5cd96132f031ee48aa98e602ddb438af3a711731f23",
     "sidecar": "tools/gen-abi-reference/sidecar.json",
-    "sidecar_sha256": "a7dd199e3bb9f0515822653477bf0a9523e47544687af365e3961a362145f858",
+    "sidecar_sha256": "4e541998c2d3282a6d9aa2275b2cfafc27a6fd04822d410924912813ca82a790",
     "generator": "tools/gen-abi-reference/gen.py",
     "note": "regenerate with tools/gen-abi-reference/gen.py; the checked-in outputs are the single source the daemon embeds (xuansi_abi_reference) — CI byte-compares"
   },
@@ -241,7 +241,7 @@
         },
         {
           "sig": "bench.wasm.plan(names) -> {rows=[{name, mem_bytes, text_bytes?, pool_bytes?}], loaded_bytes, total_bytes, budget_bytes, fits}",
-          "semantics": "admission dry-run — zero side effects; compare against budget before loading"
+          "semantics": "admission dry-run — zero side effects; compare against budget before loading. total_bytes is the union of loaded and candidate footprints — an already-loaded candidate is counted once, so planning a loaded module projects zero growth"
         }
       ],
       "clock": [

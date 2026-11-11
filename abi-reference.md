@@ -100,7 +100,7 @@ The eight boundary conditions that are learned by refusal unless written down (s
 - `bench.wasm.list() -> {names}` — loaded instances
 - `bench.wasm.info(name) -> {abi, loaded_by, session, mem_bytes[, aot='psram', text_bytes, pool_bytes]}` — identity + the static footprint trio (.aot lane carries text/pool)
 - `bench.wasm.xfer(src_name, src_off, dst_name, dst_off, len) -> n` — cross-instance memcpy with explicit ownership (no sharing, no escape); len=0 is a legal no-op; src==dst self-move uses memmove semantics; bounds checked against each instance's CURRENT extent
-- `bench.wasm.plan(names) -> {rows=[{name, mem_bytes, text_bytes?, pool_bytes?}], loaded_bytes, total_bytes, budget_bytes, fits}` — admission dry-run — zero side effects; compare against budget before loading
+- `bench.wasm.plan(names) -> {rows=[{name, mem_bytes, text_bytes?, pool_bytes?}], loaded_bytes, total_bytes, budget_bytes, fits}` — admission dry-run — zero side effects; compare against budget before loading. total_bytes is the union of loaded and candidate footprints — an already-loaded candidate is counted once, so planning a loaded module projects zero growth
 - `bench.millis() -> u32` — boot milliseconds (wraps at 49.7 days) — the Lua-face timing source (a hclock wasm module is no longer needed for this)
 - `bench.caps() -> caps` — the caps table: fw/api_version/batch, primitives.<prim>.ops, pins.banned, limits (the numeric full table — see caps_keys), heap
 - `bench.gc(mode [, pause [, stepmul]])` — the collectgarbage mirror (gc mode/knobs)

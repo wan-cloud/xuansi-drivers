@@ -294,9 +294,13 @@ push replies). The descriptive module kind (`"driver" |
 "sensor-profile" | "algorithm" | "codec"`) lives in each meta.json's
 `kind` and in the doc.md header. A `test-canary` entry is a published
 module whose FACE is deliberately a test vector (hello@1.0.0 keeps the
-retired camera imports — it exists to be refused). `fw_compat` entries
-(the fw floor a module's imports need — `{"wasm": ">=0.3.0"}` for the
-abi=2 host table) ride the index and meta as before.
+retired camera imports — it exists to be refused). The criterion is
+deliberate designation, not incidental test value: hello@1.0.0 is THE
+canonical test-canary, while a superseded historical build that merely
+happens to serve as a rename-era negative vector (ledwatch@1.0.0)
+stays production. `fw_compat` entries (the fw floor a module's imports
+need — `{"wasm": ">=0.3.0"}` for the abi=2 host table) ride the index
+and meta as before.
 
 ### meta.json (per version, beside the artifacts)
 

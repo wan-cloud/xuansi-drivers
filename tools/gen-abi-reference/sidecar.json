@@ -100,7 +100,7 @@
       {"sig": "bench.wasm.list() -> {names}", "semantics": "loaded instances"},
       {"sig": "bench.wasm.info(name) -> {abi, loaded_by, session, mem_bytes[, aot='psram', text_bytes, pool_bytes]}", "semantics": "identity + the static footprint trio (.aot lane carries text/pool)"},
       {"sig": "bench.wasm.xfer(src_name, src_off, dst_name, dst_off, len) -> n", "semantics": "cross-instance memcpy with explicit ownership (no sharing, no escape); len=0 is a legal no-op; src==dst self-move uses memmove semantics; bounds checked against each instance's CURRENT extent"},
-      {"sig": "bench.wasm.plan(names) -> {rows=[{name, mem_bytes, text_bytes?, pool_bytes?}], loaded_bytes, total_bytes, budget_bytes, fits}", "semantics": "admission dry-run — zero side effects; compare against budget before loading"}
+      {"sig": "bench.wasm.plan(names) -> {rows=[{name, mem_bytes, text_bytes?, pool_bytes?}], loaded_bytes, total_bytes, budget_bytes, fits}", "semantics": "admission dry-run — zero side effects; compare against budget before loading. total_bytes is the union of loaded and candidate footprints — an already-loaded candidate is counted once, so planning a loaded module projects zero growth"}
     ],
     "clock": [
       {"sig": "bench.millis() -> u32", "semantics": "boot milliseconds (wraps at 49.7 days) — the Lua-face timing source (a hclock wasm module is no longer needed for this)"}
