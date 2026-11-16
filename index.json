@@ -161,7 +161,7 @@
     "wasm": ">=0.8.0",
     "note": "ABI 2 trigger face (la_window_get) — needs the wave-D loader gate {1,2}; interp .wasm lane also works"
    },
-   "src_commit": "136e2ca16aa972340e1044df185d6a9d4e91d3fe"
+   "src_commit": "9d89b450d1235964dc85cc4b5602de412ec74f0b"
   }
  ]
 }

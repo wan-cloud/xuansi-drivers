@@ -4,7 +4,7 @@
   "release": "production",
   "version": "1.0.0",
   "abi": 2,
-  "src_commit": "136e2ca16aa972340e1044df185d6a9d4e91d3fe",
+  "src_commit": "9d89b450d1235964dc85cc4b5602de412ec74f0b",
   "src": "src/trigpat/trigpat.c",
   "entries": [
     {
