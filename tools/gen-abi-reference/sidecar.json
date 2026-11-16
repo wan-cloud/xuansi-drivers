@@ -141,7 +141,10 @@
     {"key": "lua_heap", "value": "live", "live": true, "note": "current Lua VM heap live bytes"},
     {"key": "wasm_memory_budget_bytes", "value": 2097152, "live": false, "note": "the WAMR pool total account — the admission budget sum(footprints) is checked against (the account is live: load/unload maintain it; the pool itself is fixed at boot)"},
     {"key": "wasm_inst_slots", "value": 16, "live": false, "note": "instance-table mapper slots (the memory account is the governing limit; a full table is the mapper's last-line api refusal)"},
+    {"key": "la_ring_budget_kb", "value": 4096, "live": false, "note": "the LA listen-ring PSRAM admission account — active rings + the request must fit it (la.listen_arm / la.sample_arm refuse on overflow, itemizing the account)"},
+    {"key": "ota_slots", "value": 2, "live": false, "note": "the A/B dual ota app slots (frozen in partitions.csv)"},
+    {"key": "ota_slot_bytes", "value": 3145728, "live": false, "note": "one ota slot's byte capacity — the reconciliation constant (ota.begin re-checks the live truth from the partition table)"},
     {"key": "adc2_note", "value": "live", "live": true, "note": "NOTE key (not a limit): the ADC2 x WiFi gate status string, one of two frozen strings"}
   ],
-  "caps_keys_note": "18 keys in caps.limits (17 numeric + adc2_note), identical across the three exits (Lua bench.caps / msgpack caps op / console CAP: lines). Same keys, same values, same order — any drift is a bug."
+  "caps_keys_note": "21 keys in caps.limits (20 numeric + adc2_note), identical across the three exits (Lua bench.caps / msgpack caps op / console CAP: lines). Same keys, same values, same order — any drift is a bug."
 }

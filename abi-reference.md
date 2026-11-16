@@ -122,7 +122,7 @@ Per-family op lists (the caps `primitives.<prim>.ops` face):
 
 ## caps_keys
 
-18 keys in caps.limits (17 numeric + adc2_note), identical across the three exits (Lua bench.caps / msgpack caps op / console CAP: lines). Same keys, same values, same order — any drift is a bug.
+21 keys in caps.limits (20 numeric + adc2_note), identical across the three exits (Lua bench.caps / msgpack caps op / console CAP: lines). Same keys, same values, same order — any drift is a bug.
 
 | key | value | note |
 |-----|-------|------|
@@ -143,5 +143,8 @@ Per-family op lists (the caps `primitives.<prim>.ops` face):
 | `lua_heap` | live (live) | current Lua VM heap live bytes |
 | `wasm_memory_budget_bytes` | 2097152 | the WAMR pool total account — the admission budget sum(footprints) is checked against (the account is live: load/unload maintain it; the pool itself is fixed at boot) |
 | `wasm_inst_slots` | 16 | instance-table mapper slots (the memory account is the governing limit; a full table is the mapper's last-line api refusal) |
+| `la_ring_budget_kb` | 4096 | the LA listen-ring PSRAM admission account — active rings + the request must fit it (la.listen_arm / la.sample_arm refuse on overflow, itemizing the account) |
+| `ota_slots` | 2 | the A/B dual ota app slots (frozen in partitions.csv) |
+| `ota_slot_bytes` | 3145728 | one ota slot's byte capacity — the reconciliation constant (ota.begin re-checks the live truth from the partition table) |
 | `adc2_note` | live (live) | NOTE key (not a limit): the ADC2 x WiFi gate status string, one of two frozen strings |
 
