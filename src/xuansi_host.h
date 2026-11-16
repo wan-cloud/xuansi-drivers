@@ -196,3 +196,48 @@ extern void xuansi_camera_info(uint32_t *out);
 XUANSI_IMPORT("xuansi", "stream_send")
 extern void xuansi_stream_send(uint32_t *out, uint32_t buf_off, uint32_t len);
 #define stream_send xuansi_stream_send
+
+/* ABI 2 addition (LA wave D, 2026-11-17) — the trigger face.
+ * ABI 2 = the whole recarved ABI 1 table above PLUS this one host
+ * function and the trigger-module callback convention. The load gate
+ * accepts abi in {1,2}; an ABI 1 module never imports la_window_get
+ * and is unaffected. Number reuse note: the pre-recarve abi=2 (B12-T3
+ * camera migration era) had exactly this table minus this function —
+ * surviving old-2 artifacts are a semantic subset of ABI 2 and load
+ * unchanged. api_version stays 1 (the bench Lua face and the --@api
+ * driver gate are untouched; this is a module-side additive lane).
+ *
+ * The one mechanical-convention divergence: la_window_get returns u32
+ * DIRECTLY (the ABI 1 void+out-param convention stays frozen for the
+ * ABI 1 face). Callable only inside trigger_scan during an armed
+ * module-trigger capture (otherwise a wasm exception raises). The
+ * window is a run-length slice of the LAST records (oldest -> newest,
+ * open run included as the final record), wire-level primitives only:
+ *
+ *   la_window_get(buf_off, cap) -> u32 len
+ *     [0] u8  ver = 1          [1] u8  domain (1=edge, 2=sample)
+ *     [2] u16 rec_size (9|5)   [4] u32 avail (records in this round's
+ *                              window, pre-truncation — compare against
+ *                              what fits to detect cap truncation)
+ *     [8] u64 seq (domain 1: lifetime run index of the first record;
+ *                 domain 2: sample index of the first record's first
+ *                 sample — continuity/skip detection across rounds)
+ *     [16] records, oldest first: domain 1 {u8 mask, u64 dur_ns LE},
+ *                 domain 2 {u8 value, u32 run LE}. Truncation keeps the
+ *                 NEWEST whole records.
+ *   No absolute timestamps ride the window (relative durations only) —
+ *   module determinism = pure function of window content + init params;
+ *   trigger-latency accounting is the fw's fire/stop dual timestamps.
+ *
+ * The trigger module contract (exports):
+ *   xuansi_abi() -> 2            (gate)
+ *   xuansi_alloc(u32) -> u32     (marshalling convention, as ABI 1)
+ *   trigger_scan() -> i32        (0 = no fire, 1 = fire; anything else
+ *                                 or a trap = the capture stops with
+ *                                 reason=err. Called at a bounded
+ *                                 cadence by the capture task; MUST
+ *                                 return — a hung module stalls the
+ *                                 capture task into the watchdog). */
+XUANSI_IMPORT("xuansi", "la_window_get")
+extern uint32_t xuansi_la_window_get(uint32_t buf_off, uint32_t cap);
+#define la_window_get xuansi_la_window_get

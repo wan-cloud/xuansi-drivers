@@ -21,18 +21,27 @@ meta). This table is the one-glance index:
 | [gc2145](modules/gc2145/2.0.0/doc.md) | 2.0.0 | production | sensor-profile | the GC2145 bring-up sequence as module data + code — the first abi=2 module (now the unified table) |
 | [jpge](modules/jpge/2.0.0/doc.md) | 2.0.0 | production | codec | camera frames → JPEG or raw RGB565 out the stream — the first `codec` module |
 | [hclock](modules/hclock/0.0.2/doc.md) | 0.0.2 | production | driver | the millis one-native module — the smallest reference and the cheapest load-path smoke |
+| [trigpat](modules/trigpat/1.0.0/doc.md) | 1.0.0 | production | trigger | the T1 trigger-module reference — bit-pattern window matcher for `la.*_arm trig.kind="module"` (the first ABI 2 module) |
 
 Every entry is **recarved ABI 1** (initial == max memory) since the
 B15 wave-3 flip: all six require fw >= 0.5.0
 (`fw_compat.wasm ">=0.5.0"`), and every pre-recarve artifact is
 retired — purged from the tree and the index (git history keeps
 them), honestly refused by the fw 0.5.0 loader, never silently
-substituted.
+substituted. **trigpat@1.0.0 is the ABI 2 exception-by-addition**
+(LA wave D): same initial==max shape, one extra host import
+(`la_window_get`) — see "Trigger modules" below; it needs the
+wave-D loader gate `{1,2}` (fw_compat `">=0.8.0"`; the interp `.wasm`
+lane works on any gate-{1,2} fw).
 
 `release` is the index's `kind` axis (`production` | `test-canary` —
 what the daemon surfaces verbatim at fetch/push time); the module
-kind (`driver` / `sensor-profile` / `algorithm` / `codec`) is the
-descriptive vocabulary carried by each meta.json and doc.md.
+kind (`driver` / `sensor-profile` / `algorithm` / `codec` /
+`trigger`) is the descriptive vocabulary carried by each meta.json
+and doc.md. A `trigger` entry on the index axis marks a T1 trigger
+module (consumable by `la.edge_arm`/`la.sample_arm`
+`trig.kind="module"`); the LA wave-D index carries it as the kind
+value so trigger modules are one filter away.
 
 ## Module ABI (abi = 1 — the 2026-11-11 recarve)
 
@@ -85,6 +94,61 @@ one-time exemption): `i2c_config`/`i2c_write`/`i2c_read`/
 `cam_frame_get`/`cam_frame_info` replaced the retired
 `camera_frame_get`/`camera_info`; an abi=1 binary importing the
 retired names is refused at link time.
+
+## Trigger modules (abi = 2 — LA wave D, the T1 face)
+
+ABI 2 = **the whole recarved ABI 1 table plus one host function and one
+callback convention** (`xuansi_host.h` "ABI 2 addition"). The load gate
+accepts `{1,2}`; an ABI 1 module never imports `la_window_get` and is
+unaffected. Number reuse, honestly: the pre-recarve abi=2 (camera
+migration era) had exactly this table minus `la_window_get` — surviving
+old-2 artifacts are a semantic subset of ABI 2 and load unchanged.
+`api_version` stays 1 (the bench Lua face and the `--@api` driver gate
+are untouched — this is a module-side additive lane).
+
+The contract — **engine in fw, policy in wasm, recipe by agent** (the
+B12 doctrine, third application):
+
+- **`trigger_scan() -> i32`** — the callback the capture task invokes
+  at a bounded cadence (every 512 new run records, or ≥200 ms on slow
+  streams; one call per round, watchdog-fed between rounds). Return
+  `0` = no fire, `1` = fire; anything else (or a trap) stops the
+  capture with `reason="err"` (honest accounting; the ring log carries
+  the module text). **Must return** — a hung module stalls the capture
+  task into the watchdog reboot. Raw i32 convention, no marshalling.
+- **`la_window_get(buf_off, cap) -> u32 len`** — pull the round's
+  run-length window slice into linear memory (the ONE host function
+  with a direct u32 return; bounds-checked, raises outside a scan).
+  16B header (ver / domain: 1=edge 2=sample / rec_size 9|5 / avail /
+  seq) + records oldest-first: edge `{u8 mask, u64 dur_ns}`,
+  sample `{u8 value, u32 run}` — **wire-level primitives only, never
+  protocol semantics** (the T1 design boundary, camera-op lesson).
+  Truncation keeps the newest whole records; `avail` in the header
+  accounts what was dropped. No absolute timestamps ride the window.
+- **fire semantics** — the trigger point is the window's END (the scan
+  frontier); the decision lags the signal by up to one cadence window
+  (512 records ≈ 2.6 KB on the sample lane). Arm `pre_kb >= window
+  depth` to guarantee the matched pattern lands inside the captured
+  pre-trigger history. The fw stamps `fire_ns` at the decision and
+  `stopped_ns` at capture end (the info face carries both for
+  kind=module — downstream latency accounting).
+- **Determinism requirement** — `trigger_scan` must be a **pure
+  function of (window content, init params)**: no cross-call scan
+  state, no clocks/randomness, no host calls besides `la_window_get`.
+  The wasm determinism is what keeps the trigger decision
+  ground-truth grade (the LLM writes the module; the numbers stay in
+  the engine). Configure init params through an ordinary exported fn
+  via `bench.wasm.call` before arming (trigpat's `config` is the
+  pattern). The module instance is pinned for the capture —
+  `bench.wasm.unload` refuses until `la.stop`/`la.disarm`.
+
+Rate gate honesty: `kind="module"` on `la.sample_arm` refuses
+`rate_hz > 2000000` (same gate as `bits` — the dense-window worst case
+is 5 B/record against the AOT scan family's 15-80 MB/s; higher gears
+can silently miss the window). Edge mode has no rate (event domain);
+a fully static line produces no records and no callbacks — level
+semantics stay on T0.
+
 
 ## Delivery track: dual artifacts (`.wasm` + `.aot`)
 
@@ -292,8 +356,11 @@ is the canonical home for module sources from that point on.
 
 `kind` is the **release class** — `"production" | "test-canary"` (the
 canary vocabulary the daemon passes verbatim through fetch/manifest/
-push replies). The descriptive module kind (`"driver" |
-"sensor-profile" | "algorithm" | "codec"`) lives in each meta.json's
+push replies); since LA wave D a module may instead carry
+`"trigger"` here, marking a T1 trigger module (see "Trigger
+modules" — the fw consumes it via `la.*_arm trig.kind="module"`).
+The descriptive module kind (`"driver" | "sensor-profile" |
+"algorithm" | "codec" | "trigger"`) lives in each meta.json's
 `kind` and in the doc.md header. A `test-canary` entry is a published
 module whose FACE is deliberately a test vector (hello@2.0.0 keeps the
 retired camera imports — it exists to be refused). The criterion is

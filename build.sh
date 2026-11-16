@@ -60,6 +60,8 @@ init_mem_for() {  # per-module --initial-memory (64KB wasm pages)
                                   # + mcu pool 30.7K + line 1.9K + heap/stack
                                   # (jpge codec module; VGA-capable static
                                   # layout, see src/jpge/jpge.c)
+        trigpat)  echo 262144 ;;   # 4 pages: window buf 4K + heap 4K + stack
+                                  # (the ABI 2 trigger reference — LA wave D)
         *)        echo 262144 ;;
     esac
 }

@@ -46,13 +46,15 @@ OUT_MD = ROOT / "abi-reference.md"
 # Both declaration forms: the drivers mirror's XUANSI_IMPORT(...) macro and
 # the firmware header's raw __attribute__((import_module, import_name)) —
 # so --header can point gen.py at the firmware's own copy for a local
-# parity check of the mirror sync.
+# parity check of the mirror sync. Return type: void (the ABI 1 frozen
+# convention) or uint32_t (the ONE ABI 2 exception — la_window_get
+# returns its length directly).
 _IMPORT = re.compile(
     r'(?:(?P<comment>/\*(?:(?!\*/)[\s\S])*\*/)\s*)?'
     r'(?:XUANSI_IMPORT\("xuansi",\s*"(?P<symbol>[a-z0-9_]+)"\)'
     r'|__attribute__\(\(import_module\("xuansi"\),\s*'
     r'import_name\("(?P<symbol2>[a-z0-9_]+)"\)\)\))\s*'
-    r'extern\s+void\s+(?P<fn>[a-z0-9_]+)\((?P<args>[^)]*)\);',
+    r'extern\s+(?P<ret>void|uint32_t)\s+(?P<fn>[a-z0-9_]+)\((?P<args>[^)]*)\);',
 )
 
 
@@ -80,11 +82,14 @@ def parse_header(text: str):
         comment = re.sub(r"^-+\s*", "", comment).strip()
         args = " ".join(m.group("args").split())
         params = [a.strip() for a in args.split(",") if a.strip()]
-        proto = f"void {m.group('fn')}({', '.join(params)})"
+        ret = m.group("ret")
+        proto = f"{ret} {m.group('fn')}({', '.join(params)})"
+        wret = "void" if ret == "void" else "u32"
         symbols.append({
             "symbol": m.group("symbol") or m.group("symbol2"),
             "prototype": proto,
-            "wasm": "(" + ", ".join(_wasm_param(p) for p in params) + ") -> void",
+            "wasm": ("(" + ", ".join(_wasm_param(p) for p in params)
+                     + f") -> {wret}"),
             "semantics": comment,
         })
     if not symbols:
@@ -141,10 +146,12 @@ def build(header_text: str, sidecar: dict):
                 "import_rule": "a module imports host functions only from "
                                "the xuansi namespace; any import outside "
                                "this table fails to link (loader api refusal)",
-                "error_channel": "every host function is void — results "
+                "error_channel": "ABI 1 host functions are void — results "
                                  "through out-parameters into linear memory; "
-                                 "errors as wasm exceptions (prefix "
-                                 "xuansi.<fn>), Lua face class=rt",
+                                 "the ONE ABI 2 exception (la_window_get) "
+                                 "returns u32 directly; errors as wasm "
+                                 "exceptions (prefix xuansi.<fn>), Lua face "
+                                 "class=rt",
                 "symbols": active,
                 "retired": retired,
             },

@@ -1,0 +1,76 @@
+{
+  "name": "trigpat",
+  "kind": "trigger",
+  "release": "production",
+  "version": "1.0.0",
+  "abi": 2,
+  "src_commit": "136e2ca16aa972340e1044df185d6a9d4e91d3fe",
+  "src": "src/trigpat/trigpat.c",
+  "entries": [
+    {
+      "fn": "xuansi_abi",
+      "signature": "() -> u32",
+      "desc": "declares ABI 2 — the trigger face (1 + la_window_get); the loader accepts {1,2}"
+    },
+    {
+      "fn": "xuansi_alloc",
+      "signature": "(u32 n) -> u32",
+      "desc": "linear-memory offset for the host-written msgpack args (config); 0 = refusal"
+    },
+    {
+      "fn": "config",
+      "signature": "[mask, value, width] -> [ok]",
+      "desc": "set the bit pattern (mask/value u8, width 1..4096 samples); domain-reject keeps the previous config; defaults mask=0xFF value=0xA5 width=8"
+    },
+    {
+      "fn": "trigger_scan",
+      "signature": "() -> i32",
+      "desc": "the T1 callback: pull one run-length window via la_window_get and answer fire(1)/no-fire(0); pure function of window + config (determinism contract); sample domain only"
+    }
+  ],
+  "doc": {
+    "ops": [
+      {
+        "name": "`xuansi_abi`",
+        "args": "—",
+        "result": "`u32`",
+        "semantics": "declares ABI 2 (the trigger face gate)"
+      },
+      {
+        "name": "`xuansi_alloc`",
+        "args": "`u32 n`",
+        "result": "`u32 off`",
+        "semantics": "msgpack args slot (ABI 1 convention; 0 = refusal)"
+      },
+      {
+        "name": "`config`",
+        "args": "`[mask, value, width]`",
+        "result": "`[ok]`",
+        "semantics": "set the pattern (mask/value u8, width 1..4096); domain-reject keeps the previous config; defaults mask=0xFF value=0xA5 width=8"
+      },
+      {
+        "name": "`trigger_scan`",
+        "args": "—",
+        "result": "`i32`",
+        "semantics": "0 = no fire, 1 = fire — pull one window (`la_window_get`) and match; raw i32 callback convention, no marshalling"
+      }
+    ],
+    "measured": {
+      "window_capacity": "4096B buffer (fw window = 512 records x 5B + 16B header = 2576B; headroom documented, board round pending)"
+    }
+  },
+  "footprint": {
+    "wasm": {
+      "initial_bytes": 262144,
+      "max_bytes": 262144
+    },
+    "aot": {
+      "esp32s3": {
+        "initial_bytes": 262144,
+        "text_bytes": 2044,
+        "pool_bytes": 104
+      }
+    }
+  },
+  "doc_note": "the trigger-module reference — la.sample_arm/la.edge_arm trig.kind=\"module\" recipe starting point (LA wave D)"
+}
