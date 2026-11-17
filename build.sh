@@ -48,7 +48,7 @@ SYSROOT="$WASI_SDK/share/wasi-sysroot"
 #  - -fno-jump-tables     -> avoids br_table jump-table encodings
 #  - memory: module-provided (initial per module / max == initial —
 #    the recarved ABI 1 freeze / global-base 1024)
-#  The freeze's 256KB initial covers hello-scale modules; ledwatch's
+#  The freeze's 256KB initial covers the default-budget modules; ledwatch's
 #  CCL working set (QVGA frame + u16 label map + per-label arrays
 #  ~627KB + the wasm-ld 64KB stack) pins 11 pages; jpge's VGA-capable
 #  static layout pins 14. max == initial everywhere (the admission

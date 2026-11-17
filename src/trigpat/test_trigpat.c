@@ -1,6 +1,6 @@
 /*
  * test_trigpat.c — native unit test for the trigpat trigger module
- * (stub host; same shape as test_hello.c).
+ * (stub host; same shape as the other module tests).
  *
  * Build & run (host toolchain, no wasm needed):
  *   cc -DXUANSI_NATIVE_TEST -Wall -Wextra -Werror -I src -I src/trigpat \

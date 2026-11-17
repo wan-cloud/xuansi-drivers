@@ -69,7 +69,7 @@ static uint32_t s_chunks;            /* chunks actually delivered */
 static uint32_t s_tx_fail_chunk;     /* 0 = never fail; N = TX full at
                                       * chunk index N (N chunks land) */
 
-/* trap emulation: the host refusal channel (same as test_hello/ledwatch) */
+/* trap emulation: the host refusal channel (same as test_ledwatch) */
 static jmp_buf s_jmp;
 static int     s_trap_armed;
 static char    s_trap_msg[128];

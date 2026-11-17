@@ -111,7 +111,7 @@
   "linear_memory": {
     "initial_bytes": 262144,
     "max_bytes": 262144,
-    "note": "4 wasm pages: fb 115200 + stage 4096 + out 2048 + heap 8192 (materialized P3-T2) + args 128 + cmd 8 + scalars ~= 130KB + wasm-ld 64KB stack -> statics+stack end at 196,480. External blit window [xfer_lo=130,960, 146,944] sits above every static (overlap-free by statics_end() arithmetic; tools/verify_st7789_blit.mjs pins it against the built wasm) and spans the dead inter-call stack. Same budget class as hello; co-loads with ledwatch in the 2MiB WAMR pool."
+    "note": "4 wasm pages: fb 115200 + stage 4096 + out 2048 + heap 8192 (materialized P3-T2) + args 128 + cmd 8 + scalars ~= 130KB + wasm-ld 64KB stack -> statics+stack end at 196,480. External blit window [xfer_lo=130,960, 146,944] sits above every static (overlap-free by statics_end() arithmetic; tools/verify_st7789_blit.mjs pins it against the built wasm) and spans the dead inter-call stack. Same budget class as the default modules; co-loads with ledwatch in the 2MiB WAMR pool."
   },
   "hardware": {
     "panel": "ST7789V 240x240 IPS, 7-pin module, NO CS (bus dedicated)",

@@ -7,7 +7,7 @@
  *      src/st7789/test_st7789.c -o build/test_st7789 \
  *      && ./build/test_st7789
  *
- * Same seam as test_hello.c / test_ledwatch.c: this file includes
+ * Same seam as test_ledwatch.c: this file includes
  * st7789.c directly (one translation unit), provides the `xuansi`
  * host namespace as stubs, and drives every export through the u32-
  * offset msgpack marshalling the wasm host uses.

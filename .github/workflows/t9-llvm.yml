@@ -15,13 +15,13 @@ name: t9-llvm
 #               linux leg, libraries-only), upload as a run artifact.
 #   job wamrc : build wamr-compiler from WAMR (esp fork = board runtime
 #               source) against the package, instrumented to dump the
-#               real .o; compile the five driver modules; assert at the
+#               real .o; compile the four driver modules; assert at the
 #               ELF/object level (mode=surgery):
 #                 1. .literal section is SHF_ALLOC without SHF_EXECINSTR
 #                 2. R_XTENSA_SLOT0_OP count == 0 (no l32r to the pool)
 #                 3. literal base chain (l32i a?, a2, 8 / l32i a?, a?, 320)
 #                    present in the disassembly; no l32r anywhere
-#                 4. all five modules compile
+#                 4. all four modules compile
 #                 5. P3-T11b arg0 gates: every precheck-wrapper -> wrapped
 #                    body call forwards exec_env verbatim into arg0
 #                    (mov aX, a2); the argument-promotion shape (wrapper
@@ -267,12 +267,11 @@ jobs:
           echo "OBJDUMP=$OD" >> "$GITHUB_ENV"
           "$OD" --version | head -1
 
-      - name: compile the five modules (drivers build.sh flags)
+      - name: compile the four modules (drivers build.sh flags)
         run: |
           set -eux
           mkdir -p t9out
           declare -A WASMS=(
-            [hello]=modules/hello/2.0.0/hello.wasm
             [gc2145]=modules/gc2145/2.0.0/gc2145.wasm
             [ledwatch]=modules/ledwatch/3.0.0/ledwatch.wasm
             [st7789]=modules/st7789/2.0.0/st7789.wasm
@@ -288,7 +287,7 @@ jobs:
               *)  MLLVM_ARGS="--mllvm=-$MLLVM"; echo "note: prepended '-' to mllvm input" ;;
             esac
           fi
-          for m in hello gc2145 ledwatch st7789 jpge; do
+          for m in gc2145 ledwatch st7789 jpge; do
             XUANSI_DUMP_OBJ="$PWD/t9out/$m.o" \
               ./wamrc-t9 --target=xtensa --cpu=esp32s3 --size-level=3 $MLLVM_ARGS \
               -o "t9out/$m.aot" "${WASMS[$m]}"
@@ -304,12 +303,12 @@ jobs:
           import os, re, subprocess, sys, json
           mode = os.environ.get("MODE", "surgery")
           od = os.environ["OBJDUMP"]
-          mods = ["hello", "gc2145", "ledwatch", "st7789", "jpge"]
+          mods = ["gc2145", "ledwatch", "st7789", "jpge"]
           # committed stock baseline (drivers main, 18.1.2 pipeline; parsed
           # from the shipped .aot containers - task evidence
-          # 2026-11-10-p3-t9-stock-baseline.txt)
+          # 2026-11-10-p3-t9-stock-baseline.txt; hello's row retired with
+          # the module itself, master ruling 2026-11-17)
           stock = {
-            "hello":    dict(text=6712,  lit=500,  slot0=191, r32=46),
             "gc2145":   dict(text=8968,  lit=456,  slot0=158, r32=18),
             "ledwatch": dict(text=11264, lit=244,  slot0=153, r32=9),
             "st7789":   dict(text=20684, lit=1244, slot0=452, r32=52),
@@ -405,7 +404,7 @@ jobs:
                   for f in failures:
                       print("FAIL " + f)
                   sys.exit(1)
-              print("ALL FIVE GATES PASS x 5 MODULES")
+              print("ALL FIVE GATES PASS x 4 MODULES")
           with open("t9out/t9-table.json", "w") as fh:
               json.dump(table, fh, indent=1)
           EOF
@@ -413,13 +412,13 @@ jobs:
       - name: save disassembly + section evidence
         run: |
           set -eux
-          for m in hello gc2145 ledwatch st7789 jpge; do
+          for m in gc2145 ledwatch st7789 jpge; do
             "$OBJDUMP" -d "t9out/$m.o" > "t9out/$m.disasm.txt"
             readelf -SW "t9out/$m.o" > "t9out/$m.sections.txt"
             readelf -rW "t9out/$m.o" > "t9out/$m.relocs.txt"
           done
-          echo '--- prologue chain excerpts (hello) ---'
-          grep -nE -m4 -B2 -A6 "l32i +a[0-9]+, a2, 8" t9out/hello.disasm.txt || true
+          echo '--- prologue chain excerpts (gc2145) ---'
+          grep -nE -m4 -B2 -A6 "l32i +a[0-9]+, a2, 8" t9out/gc2145.disasm.txt || true
 
       - name: upload evidence artifacts
         uses: actions/upload-artifact@v4

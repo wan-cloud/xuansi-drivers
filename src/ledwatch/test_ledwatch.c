@@ -6,7 +6,7 @@
  *      src/ledwatch/test_ledwatch.c -o build/test_ledwatch \
  *      && ./build/test_ledwatch
  *
- * Same seam as test_hello.c: the test includes ledwatch.c directly (one
+ * Same seam as the other module tests: the test includes ledwatch.c directly (one
  * translation unit), provides the `xuansi` host namespace as stubs, and
  * drives analyze() through the same u32-offset msgpack marshalling the
  * wasm host uses — the test owns the "linear memory" arena via
@@ -45,7 +45,7 @@ static uint32_t s_frame_calls;               /* cam_frame_get counter */
 static uint8_t s_staged[STG_N][320u * 240u * 2u];
 static int s_staged_n, s_staged_i;
 
-/* trap emulation: the host refusal channel (same as test_hello) */
+/* trap emulation: the host refusal channel (same as the other module tests) */
 static jmp_buf s_jmp;
 static int     s_trap_armed;
 static char    s_trap_msg[128];

@@ -35,8 +35,11 @@
  * unified table (the abi=2 additions included, the retired camera
  * names gone) + the initial==max linear-memory freeze (build.sh --next
  * pins the pair; the fw loader refuses initial != max shapes with the
- * bytes in the refusal). From the recarve on, XUANSI_ABI stays 1 and
- * the version axis is single: module ABI == bench api_version == 1.
+ * bytes in the refusal). From the recarve on the version axis is
+ * single: module ABI and bench api_version are the SAME axis
+ * (master ruling 2026-11-17: api_version pulled up to 2 alongside the
+ * ABI 2 trigger-face ratification — the --@api driver gate requires 2
+ * from that fw on; the module load gate stays {1,2}).
  */
 #ifndef XUANSI_ABI
 #define XUANSI_ABI 1
@@ -204,8 +207,9 @@ extern void xuansi_stream_send(uint32_t *out, uint32_t buf_off, uint32_t len);
  * and is unaffected. Number reuse note: the pre-recarve abi=2 (B12-T3
  * camera migration era) had exactly this table minus this function —
  * surviving old-2 artifacts are a semantic subset of ABI 2 and load
- * unchanged. api_version stays 1 (the bench Lua face and the --@api
- * driver gate are untouched; this is a module-side additive lane).
+ * unchanged. api_version = 2 (master ruling 2026-11-17, the axis
+ * alignment riding this ABI 2 ratification: the bench Lua face is
+ * unchanged, the --@api driver gate requires 2 from that fw on).
  *
  * The one mechanical-convention divergence: la_window_get returns u32
  * DIRECTLY (the ABI 1 void+out-param convention stays frozen for the

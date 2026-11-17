@@ -99,7 +99,7 @@
  * Linear memory: fb 115,200 + stage 4,096 + out 2,048 + heap 8,192 +
  * args slot 128 + cmd 8 ~= 132KB + wasm-ld 64KB stack -> the frozen
  * default 262,144B initial (4 pages; the B15 ABI 1 freeze pins
- * max == initial) — hello's budget class.
+ * max == initial) — the default budget class.
  * The external blit window [statics_end(), 146,944] sits above every
  * static and spans the (dead inter-call) stack: statics ~131KB + frame
  * 115.2KB fits inside 262,144 with ~16KB of legal floor headroom. */
@@ -124,7 +124,7 @@
 #define XUANSI_ABI_OVERRIDE XUANSI_ABI
 #endif
 
-/* ---- native-test seam (same discipline as hello.c / ledwatch.c) ----
+/* ---- native-test seam (same discipline as ledwatch.c) --------------
  * Unit tests compile this file with the host toolchain against a stub
  * host that ALSO models the panel (a 240x320 gate-source RAM with a
  * CASET/RASET/RAMWR interpreter), so window geometries are asserted on
@@ -401,7 +401,7 @@ static int streq(const char *a, const char *b)
     return *a == *b;
 }
 
-/* args[0] as int (tolerant default, hello's arg_int discipline) */
+/* args[0] as int (tolerant default, the shared arg_int discipline) */
 static int64_t arg_int0(const uint8_t *p, uint32_t len, int64_t dflt)
 {
     uint32_t pos = 0;

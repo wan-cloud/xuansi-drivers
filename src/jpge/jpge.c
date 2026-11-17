@@ -108,7 +108,7 @@ size_t jpge_encode_rgb565(const unsigned char *src, size_t src_len,
                           int w, int h, int quality,
                           unsigned char *out, size_t out_cap);
 
-/* ---- native-test seam (same discipline as hello.c/ledwatch.c) -----
+/* ---- native-test seam (same discipline as ledwatch.c) -------------
  * Unit tests compile this file with the host toolchain against a stub
  * host. The test owns a "linear memory" arena and passes u32 offsets
  * exactly like the wasm host does; the buffers the HOST touches

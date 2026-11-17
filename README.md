@@ -15,24 +15,31 @@ meta). This table is the one-glance index:
 
 | module | version | release | kind | one-liner |
 |--------|---------|---------|------|-----------|
-| [hello](modules/hello/2.0.0/doc.md) | 2.0.0 | test-canary | driver | the ABI's reference module — full host-surface tour; imports the retired camera names on purpose (the loader's retired-import refusal vector) |
 | [ledwatch](modules/ledwatch/3.0.0/doc.md) | 3.0.0 | production | algorithm | QVGA camera frames → LED on/off regions (connected components), consumed by the closed-loop tasks |
 | [st7789](modules/st7789/2.0.0/doc.md) | 2.0.0 | production | driver | ST7789V 240x240 TFT panel over CS-less SPI — the first `driver` module |
 | [gc2145](modules/gc2145/2.0.0/doc.md) | 2.0.0 | production | sensor-profile | the GC2145 bring-up sequence as module data + code — the first abi=2 module (now the unified table) |
 | [jpge](modules/jpge/2.0.0/doc.md) | 2.0.0 | production | codec | camera frames → JPEG or raw RGB565 out the stream — the first `codec` module |
-| [hclock](modules/hclock/0.0.2/doc.md) | 0.0.2 | production | driver | the millis one-native module — the smallest reference and the cheapest load-path smoke |
 | [trigpat](modules/trigpat/1.0.0/doc.md) | 1.0.0 | production | trigger | the T1 trigger-module reference — bit-pattern window matcher for `la.*_arm trig.kind="module"` (the first ABI 2 module) |
 
 Every entry is **recarved ABI 1** (initial == max memory) since the
-B15 wave-3 flip: all six require fw >= 0.5.0
+B15 wave-3 flip: all four require fw >= 0.5.0
 (`fw_compat.wasm ">=0.5.0"`), and every pre-recarve artifact is
 retired — purged from the tree and the index (git history keeps
 them), honestly refused by the fw 0.5.0 loader, never silently
 substituted. **trigpat@1.0.0 is the ABI 2 exception-by-addition**
 (LA wave D): same initial==max shape, one extra host import
 (`la_window_get`) — see "Trigger modules" below; it needs the
-wave-D loader gate `{1,2}` (fw_compat `">=0.8.0"`; the interp `.wasm`
+wave-D loader gate `{1,2}` (fw_compat `">=0.7.0"` — master ruling
+2026-11-17: v11/ABI 2/api_version 2 all ship with fw 0.7.0,
+unreleased and therefore usable; the interp `.wasm`
 lane works on any gate-{1,2} fw).
+
+**hello and hclock are retired (master ruling 2026-11-17: the two
+test modules are removed).** Their module trees, index entries and
+sources are gone from the tip (git history keeps them); the
+firmware's frozen `tools/wasm/hello.c` copy stays in the fw repo as
+ABI-freeze build evidence and keeps carrying the retired-import
+refusal vector there.
 
 `release` is the index's `kind` axis (`production` | `test-canary` —
 what the daemon surfaces verbatim at fetch/push time); the module
@@ -72,7 +79,10 @@ gone) plus the **initial == max linear-memory freeze** (a static
 footprint for the memory-admission budget — the fw loader refuses
 `initial != max` and max-absent shapes with the bytes in the
 refusal). One contract axis from here on: module ABI and bench
-`api_version` are the same 1.
+`api_version` are the same axis (recarved at 1; master ruling
+2026-11-17 pulled `api_version` up to 2 with the ABI 2 trigger-face
+ratification — the module load gate stays {1,2}, the `--@api` driver
+gate requires 2 from fw 0.7.0 on).
 
 Limits (frozen): args/result msgpack ≤ 8192B, container depth ≤ 8,
 module file ≤ 256KB, module memory = one fixed allocation
@@ -103,8 +113,10 @@ accepts `{1,2}`; an ABI 1 module never imports `la_window_get` and is
 unaffected. Number reuse, honestly: the pre-recarve abi=2 (camera
 migration era) had exactly this table minus `la_window_get` — surviving
 old-2 artifacts are a semantic subset of ABI 2 and load unchanged.
-`api_version` stays 1 (the bench Lua face and the `--@api` driver gate
-are untouched — this is a module-side additive lane).
+`api_version` = 2 (master ruling 2026-11-17, the axis alignment riding
+this ratification: the bench Lua face is unchanged; the `--@api` driver
+gate requires 2 from fw 0.7.0 on — old `--@api 1` scripts are honestly
+refused).
 
 The contract — **engine in fw, policy in wasm, recipe by agent** (the
 B12 doctrine, third application):
@@ -273,8 +285,8 @@ fw load gate pre-checks Σ(footprints) against it with the arithmetic
 in the refusal (`bench.wasm.plan` is the dry-run). Every meta carries
 the module's static footprint (`footprint`: initial/max from the
 `.wasm` memory section — equal, by the ABI 1 freeze; text/pool from
-the `.aot` container). Working the numbers on the published six:
-initial-memory footprints are hello/hclock/gc2145/st7789 262,144B,
+the `.aot` container). Working the numbers on the published five:
+initial-memory footprints are gc2145/st7789/trigpat 262,144B,
 ledwatch 720,896B, jpge 917,504B — e.g. gc2145 + jpge + ledwatch =
 1,900,544B fits; any four-way set that includes both ledwatch and
 jpge exceeds the budget and is honestly refused (a pre-B15 board run
@@ -328,9 +340,11 @@ tools/verify_tcindex.py     # toolchain-index.json structure check
 .github/workflows/ci.yml    # CI: build / verify / native / generated
 ```
 
-`hello.c` was migrated from the firmware tree at the ABI-freeze batch;
-the firmware's copy is frozen there as build evidence — this repository
-is the canonical home for module sources from that point on.
+Module sources have their canonical home in this repository since the
+ABI-freeze batch (`hello.c` was the original migrant; hello/hclock
+themselves are retired — master ruling 2026-11-17). The firmware's
+frozen `tools/wasm/hello.c` copy stays there as build evidence of the
+freeze, untracked by this repo's lifecycle.
 
 ## index.json schema
 
@@ -339,16 +353,16 @@ is the canonical home for module sources from that point on.
   "index_ver": 1,
   "modules": [
     {
-      "name": "hello",
-      "kind": "test-canary",
+      "name": "st7789",
+      "kind": "production",
       "version": "2.0.0",
       "abi": 1,
       "files": [
-        { "path": "modules/hello/2.0.0/hello.wasm",
-          "sha256": "<hex>", "bytes": 5714 }
+        { "path": "modules/st7789/2.0.0/st7789.wasm",
+          "sha256": "<hex>", "bytes": 6891 }
       ],
       "fw_compat": { "wasm": ">=0.5.0" },
-      "src_commit": "<git commit of src/hello/hello.c>"
+      "src_commit": "<git commit of src/st7789/st7789.c>"
     }
   ]
 }
@@ -362,12 +376,16 @@ modules" — the fw consumes it via `la.*_arm trig.kind="module"`).
 The descriptive module kind (`"driver" | "sensor-profile" |
 "algorithm" | "codec" | "trigger"`) lives in each meta.json's
 `kind` and in the doc.md header. A `test-canary` entry is a published
-module whose FACE is deliberately a test vector (hello@2.0.0 keeps the
-retired camera imports — it exists to be refused). The criterion is
-deliberate designation, not incidental test value: hello@2.0.0 is THE
-canonical test-canary, while a superseded historical build that merely
-happens to serve as a rename-era negative vector (ledwatch@1.0.0,
-retired with the wave-3 purge) stayed production. `fw_compat` entries
+module whose FACE is deliberately a test vector. The class is
+currently EMPTY: hello@2.0.0 — the canonical test-canary (it kept the
+retired camera imports on purpose, existing to be refused at link
+time) — was retired with hclock by the master ruling 2026-11-17; its
+retired-import refusal duty lives on in the fw repo's frozen
+`tools/wasm/hello.c` evidence copy. The criterion stays deliberate
+designation, not incidental test value (a superseded historical build
+that merely happens to serve as a rename-era negative vector —
+ledwatch@1.0.0, retired with the wave-3 purge — stayed production).
+`fw_compat` entries
 (the fw floor a module needs) ride the index and meta as before —
 `{"wasm": ">=0.5.0"}` for every recarved-ABI-1 product.
 
@@ -411,8 +429,9 @@ best-effort leg failed (MSVC probe); tracked P2.
 
 Build flags are frozen in `build.sh` (`-O2 -fno-jump-tables -nostdlib`,
 `--no-entry --initial-memory=<per module> --max-memory=<same value>
---global-base=1024`, `--strip-debug --export-dynamic`; hello pins the
-freeze's 256KB initial, ledwatch pins 11 pages — see `init_mem_for()`).
+--global-base=1024`, `--strip-debug --export-dynamic`; the default
+modules pin the freeze's 256KB initial (`init_mem_for()` fallback),
+ledwatch pins 11 pages — see `init_mem_for()`).
 Rebuilds are deterministic — CI re-derives every hash and compares it
 against `index.json` and each `meta.json` on every push. **The one
 lane since the B15 W3-T2 flip is the recarved ABI 1**: `max ==
@@ -463,7 +482,7 @@ same tools through their agent):
    = `"0.0.1"` (the first-build convention — the build face has no
    index whose highest to take, unlike `driver_fetch`; rebuilds version
    explicitly); `initial_memory` in **bytes**, omitted = the freeze
-   default 262144 (4 × 64 KiB pages — hello's budget class), an
+   default 262144 (4 × 64 KiB pages — the default budget class), an
    explicit value must be a whole multiple of 65536 and at most the
    frozen 1048576 ceiling (ledwatch-scale working sets pin 11 pages,
    `720896`); `fw` = an explicit early-refusal pre-check against the
@@ -553,12 +572,12 @@ tree; the two consumer routes above are the honest ways to use one.
 
 ```sh
 ./build.sh              # build all published modules -> modules/<name>/<ver>/
-./build.sh hello        # one module
+./build.sh st7789       # one module
 ./build.sh --check      # rebuild into a scratch dir, compare hashes
 python3 tools/extract_doc.py --check      # doc.md <-> meta doc/release/footprint parity
 python3 tools/gen-abi-reference/gen.py --check   # abi-reference drift-lock
-cc -DXUANSI_NATIVE_TEST -Wall -Wextra -I src -I src/hello \
-   src/hello/test_hello.c -o /tmp/test_hello && /tmp/test_hello
+cc -DXUANSI_NATIVE_TEST -Wall -Wextra -I src -I src/trigpat \
+   src/trigpat/test_trigpat.c -o /tmp/test_trigpat && /tmp/test_trigpat
 ```
 
 The native test compiles the module with the host toolchain against a

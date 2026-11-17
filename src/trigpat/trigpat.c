@@ -40,7 +40,7 @@
 #define XUANSI_ABI_OVERRIDE XUANSI_ABI
 #endif
 
-/* ---- native-test seam (same shape as hello) ------------------------ */
+/* ---- native-test seam (the shared module-test shape) --------------- */
 #ifdef XUANSI_NATIVE_TEST
 uint8_t *xuansi_lin_base;                  /* test-owned linear-memory base */
 #define XUANSI_IN(off) ((const uint8_t *)((size_t)xuansi_lin_base + (size_t)(uint32_t)(off)))
@@ -100,7 +100,8 @@ static uint64_t pack(uint32_t ptr, uint32_t len)
     return ((uint64_t)ptr << 32) | (uint64_t)len;
 }
 
-/* ---- minimal msgpack decode (the int/array subset — hello's face) ---- */
+/* ---- minimal msgpack decode (the int/array subset — the shared
+ * module face) ---- */
 static int mp_read_int(const uint8_t *p, uint32_t len, uint32_t *pos,
                        int64_t *out)
 {

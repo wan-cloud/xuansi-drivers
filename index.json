@@ -2,29 +2,6 @@
  "index_ver": 1,
  "modules": [
   {
-   "name": "hello",
-   "kind": "test-canary",
-   "version": "2.0.0",
-   "abi": 1,
-   "files": [
-    {
-     "path": "modules/hello/2.0.0/hello.wasm",
-     "sha256": "59c8381c7833477b97acc7ab48cc54198744b4e65fba3f1fe67fc4addd1f4ced",
-     "bytes": 5714
-    },
-    {
-     "path": "modules/hello/2.0.0/hello.aot",
-     "sha256": "895f95af3565b16dae8dffd747107b1c141804122a06407bef0eabc54b9d8ba7",
-     "bytes": 9016,
-     "target": "esp32s3"
-    }
-   ],
-   "fw_compat": {
-    "wasm": ">=0.5.0"
-   },
-   "src_commit": "6875d6b959efc99c8513e6f02372ac4ae2a85e57"
-  },
-  {
    "name": "ledwatch",
    "kind": "production",
    "version": "3.0.0",
@@ -117,29 +94,6 @@
    "src_commit": "6875d6b959efc99c8513e6f02372ac4ae2a85e57"
   },
   {
-   "name": "hclock",
-   "kind": "production",
-   "version": "0.0.2",
-   "abi": 1,
-   "files": [
-    {
-     "path": "modules/hclock/0.0.2/hclock.wasm",
-     "sha256": "be1a4940869adbdb3d4ed24a5cf156cc736abb514c6ec54272554cef2ee5aa82",
-     "bytes": 729
-    },
-    {
-     "path": "modules/hclock/0.0.2/hclock.aot",
-     "sha256": "4ea39b3a804ea132654e485e3b424020f74310504cc6dd7d77f80f0ddb92da5a",
-     "bytes": 1284,
-     "target": "esp32s3"
-    }
-   ],
-   "fw_compat": {
-    "wasm": ">=0.5.0"
-   },
-   "src_commit": "7d556dc51a4aa580ec9ce0e20f3a6687558f47fb"
-  },
-  {
    "name": "trigpat",
    "kind": "trigger",
    "version": "1.0.0",
@@ -158,8 +112,8 @@
     }
    ],
    "fw_compat": {
-    "wasm": ">=0.8.0",
-    "note": "ABI 2 trigger face (la_window_get) — needs the wave-D loader gate {1,2}; interp .wasm lane also works"
+    "wasm": ">=0.7.0",
+    "note": "ABI 2 trigger face (la_window_get) — needs the wave-D loader gate {1,2}; interp .wasm lane also works. Master ruling 2026-11-17: v11/ABI 2/api_version 2 all ship with fw 0.7.0 (unreleased, usable)"
    },
    "src_commit": "9d89b450d1235964dc85cc4b5602de412ec74f0b"
   }

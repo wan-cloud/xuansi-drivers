@@ -34,7 +34,7 @@
  *   hunting red-only LEDs pass a lower threshold.
  *
  *   The camera must already be on at QVGA (caller's responsibility,
- *   same contract as hello's cam_frame): camera not on, or a larger
+ *   same contract as gc2145's cam_frame): camera not on, or a larger
  *   framesize, surfaces as the host's wasm exception (class=rt).
  *
  * Pipeline: RGB565 (hi byte first — the GC2145 DVP wire order) ->
@@ -55,7 +55,8 @@
  * result 4,096 ~= 627KB, plus the wasm-ld default 64KB stack -> builds
  * pin --initial-memory=720896 (11 pages; the B15 ABI 1 freeze pins
  * max == initial). One ledwatch
- * instance + one hello co-load fit the board's 1MB WAMR pool; two
+ * instance + one default-budget (262,144B) co-load fit the board's
+ * 1MB WAMR pool; two
  * ledwatch instances do not (the loader refuses with an out-of-memory
  * error — by design).
  */
@@ -80,7 +81,7 @@
 #define XUANSI_ABI_OVERRIDE XUANSI_ABI
 #endif
 
-/* ---- native-test seam (same discipline as hello.c) ----------------
+/* ---- native-test seam (same discipline as st7789.c) ----------------
  * Unit tests compile this file with the host toolchain against a stub
  * host. The test owns a "linear memory" arena and passes u32 offsets
  * exactly like the wasm host does; the buffers the HOST touches
@@ -191,7 +192,7 @@ static uint64_t pack(uint32_t ptr, uint32_t len)
  * Decode: args array -> cfg map (fixmap/map16), keys fixstr, values
  * int (fixint/u8/u16/u32) or bool — exactly the abi=1 value domain a
  * Lua cfg table can produce. Encode: fixmap/fixarray/fixstr + the int
- * widths of hello's mp_put_int. */
+ * widths of the shared mp_put_int. */
 
 static int mp_read_int(const uint8_t *p, uint32_t len, uint32_t *pos,
                        int64_t *out)

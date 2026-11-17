@@ -2,12 +2,12 @@
   "_note": "sidecar.json — the CURATED half of the xuansi ABI reference (B15 W2-T3, spec §4.14). tools/gen-abi-reference/gen.py combines this with the SYMBOL face parsed from src/xuansi_host.h (the module-side mirror of the firmware's tools/wasm/xuansi_host.h — the signature source) and emits the checked-in abi-reference.json + abi-reference.md. CI regenerates both and hard-diffs (drift-lock): regenerating must be byte-stable, so this file carries NO timestamps. Curated content lives here; signatures live in the header — never duplicate a signature in both.",
   "abi": {
     "version": 1,
-    "note": "ABI 1 is the 2026-11-11 recarve (B15 ruling): one contract axis — module ABI and bench api_version are the SAME 1. The old abi=1/abi=2 numbers are retired with fw 0.5.0 (wave-3); the recarved table is the unified host table (the i2c x4 + cam x5 families included, the retired camera_* names gone) plus the initial==max memory freeze. During wave-2 both {1,2} still load.",
+    "note": "ABI 1 is the 2026-11-11 recarve (B15 ruling): one contract axis — module ABI and bench api_version are the SAME axis (master ruling 2026-11-17: api_version pulled up to 2 with the ABI 2 trigger-face ratification). The old abi=1/abi=2 numbers are retired with fw 0.5.0 (wave-3); the recarved table is the unified host table (the i2c x4 + cam x5 families included, the retired camera_* names gone) plus the initial==max memory freeze. During wave-2 both {1,2} still load.",
     "fw_reference": "the 0.4.x wave-2 firmware (protocol_ver 7 era) — the host table this reference was curated against",
     "fw_header_source": "the firmware's tools/wasm/xuansi_host.h (signature source; mirrored module-side at src/xuansi_host.h in this repo — the mirror is what CI reads)",
     "load_gate_wave2": "{1,2} (fw < 0.5.0) — the wave-3 gate is {1} with the recarved semantics",
     "memory_freeze": "a module's linear memory must declare max == initial (the static-footprint freeze; the fw loader refuses initial != max and max-absent shapes with the bytes in the refusal)",
-    "load_gate": "{1,2} (LA wave D, fw >=0.8.0): 1 = the 2026-11-11 recarve (base table); 2 = 1 + the la_window_get trigger face. Number reuse, honest: pre-recarve abi=2 artifacts had exactly this table minus la_window_get (a semantic subset) and load unchanged. api_version stays 1 — the bench Lua face and the --@api driver gate are untouched (a module-side additive lane)",
+    "load_gate": "{1,2} (LA wave D, fw >=0.7.0): 1 = the 2026-11-11 recarve (base table); 2 = 1 + the la_window_get trigger face. Number reuse, honest: pre-recarve abi=2 artifacts had exactly this table minus la_window_get (a semantic subset) and load unchanged. api_version = 2 (master ruling 2026-11-17, the axis alignment riding the ABI 2 ratification: the bench Lua face is unchanged, the --@api driver gate requires 2 from that fw on; old --@api 1 scripts are honestly refused)",
     "abi2_trigger_face": "ABI 2 = 1 + la_window_get + the trigger callback convention: exports xuansi_abi()->2, xuansi_alloc, trigger_scan()->i32 (0 = no fire, 1 = fire; anything else or a trap stops the capture with reason=err). The capture task calls trigger_scan at a bounded cadence (512 new run records, or >=200ms on slow streams); inside the callback the module pulls one run-length window via la_window_get (16B header: ver/domain/rec_size/avail/seq, then edge {u8 mask, u64 dur_ns} or sample {u8 value, u32 run} records oldest-first, truncation keeps the newest whole records, no absolute timestamps). Determinism requirement: trigger_scan is a pure function of (window content, init params). Consumed by la.edge_arm/la.sample_arm trig.kind=\"module\" (module name; the instance is pinned for the capture)"
   },
   "retired_symbols": {
@@ -129,7 +129,7 @@
     "clock": [
       {
         "sig": "bench.millis() -> u32",
-        "semantics": "boot milliseconds (wraps at 49.7 days) — the Lua-face timing source (a hclock wasm module is no longer needed for this)"
+        "semantics": "boot milliseconds (wraps at 49.7 days) — the Lua-face timing source (native since B14 — a wasm-module detour is no longer needed for this)"
       },
       {
         "sig": "bench.timer_ms(period_ms, fn)",

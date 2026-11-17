@@ -92,7 +92,7 @@
 #define XUANSI_ABI_OVERRIDE XUANSI_ABI
 #endif
 
-/* ---- native-test seam (same discipline as hello/ledwatch/st7789) ----
+/* ---- native-test seam (same discipline as ledwatch/st7789) ----
  * Unit tests compile this file with the host toolchain against a stub
  * host (fake i2c + fake cam engine recording every transaction). The
  * test owns the "linear memory" arena; every host-touched buffer lives
@@ -127,7 +127,7 @@ static uint8_t *heap_buf;                  /* placed by xuansi_native_init() */
 static uint8_t *io_buf;                    /* 4B: write[0..1] / read[2] */
 static uint8_t *out_buf;                   /* result marshal buffer */
 #else
-/* P3-T12 rider (T2's routed item, hello/ledwatch/jpge's fix applied):
+/* P3-T12 rider (T2's routed item, ledwatch/jpge's fix applied):
  * heap_buf is REFERENCED now — the bump path returns heap_buf-based
  * addresses, not the bare offsets 8..512 it used to hand out (linear
  * addresses in .rodata/.data territory — and the unreferenced array

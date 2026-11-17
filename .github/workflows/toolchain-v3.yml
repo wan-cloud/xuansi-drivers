@@ -25,7 +25,7 @@ name: toolchain-v3
 # best-effort leg failed its MSVC probe there).
 #
 # Surgery smoke gate (every leg, before any upload): the freshly built
-# wamrc must compile the repo's own hello.wasm into a SURGERY container
+# wamrc must compile the repo's own gc2145.wasm into a SURGERY container
 # — banner "xuansi surgery mode: ON", TEXT literal_size == 0, the
 # xuansi.literal pool CUSTOM section present before RELOCATION. A
 # wamrc that silently defaulted to stock codegen must never ship as
@@ -269,18 +269,19 @@ jobs:
           ./wamrc-v3 --version
 
       # The pairing gate: this wamrc must be a SURGERY wamrc. Compiles
-      # the repo's own hello.wasm (frozen recipe) and asserts the
+      # the repo's own gc2145.wasm (frozen recipe; the probe module
+      # since the 2026-11-17 hello retirement) and asserts the
       # surgery container shape — a stock-defaulting binary must never
       # ship as toolchain-v3 (that is toolchain-v2's lane).
       - name: surgery smoke gate (container shape, not just the banner)
         run: |
           set -eux
           ./wamrc-v3 --target=xtensa --cpu=esp32s3 --size-level=3 \
-            -o hello-v3-smoke.aot modules/hello/2.0.0/hello.wasm 2>&1 | tee smoke.log
+            -o gc2145-v3-smoke.aot modules/gc2145/2.0.0/gc2145.wasm 2>&1 | tee smoke.log
           grep -q "xuansi surgery mode: ON" smoke.log
           python3 - <<'EOF'
           import struct, sys
-          buf = open("hello-v3-smoke.aot", "rb").read()
+          buf = open("gc2145-v3-smoke.aot", "rb").read()
           assert struct.unpack("<I", buf[0:4])[0] == 0x746F6100, "not an \\0aot container"
           p, lit_sz, pool_at, seen_reloc = 8, None, None, False
           while p + 8 <= len(buf):

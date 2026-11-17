@@ -89,11 +89,12 @@ jobs:
           test -x "$TOOLCHAIN_ROOT/wamrc-install/wamrc"
           # the surgery banner gate: the xtensa default on this fork
           # wamrc must be surgery ON (the toolchain-v3.yml smoke gate's
-          # twin; grep decides, the --target=help exit is swallowed)
-          hello="$TOOLCHAIN_ROOT/surgery-probe.wasm"
-          cp modules/hello/2.0.0/hello.wasm "$hello"
+          # twin; grep decides, the --target=help exit is swallowed).
+          # (probe module = gc2145 since the 2026-11-17 hello retirement)
+          probe="$TOOLCHAIN_ROOT/surgery-probe.wasm"
+          cp modules/gc2145/2.0.0/gc2145.wasm "$probe"
           "$TOOLCHAIN_ROOT/wamrc-install/wamrc" --target=xtensa --cpu=esp32s3 --size-level=3 \
-            -o "$TOOLCHAIN_ROOT/surgery-probe.aot" "$hello" 2>&1 | tee "$TOOLCHAIN_ROOT/probe.log"
+            -o "$TOOLCHAIN_ROOT/surgery-probe.aot" "$probe" 2>&1 | tee "$TOOLCHAIN_ROOT/probe.log"
           grep -q "xuansi surgery mode: ON" "$TOOLCHAIN_ROOT/probe.log"
           test -s "$TOOLCHAIN_ROOT/surgery-probe.aot"
           echo "wamrc asset tier: OK (fork source build skipped)"
@@ -138,10 +139,10 @@ jobs:
           ninja -C wamr/wamr-compiler/build
           mkdir -p "$TOOLCHAIN_ROOT/wamrc-install"
           cp wamr/wamr-compiler/build/wamrc "$TOOLCHAIN_ROOT/wamrc-install/wamrc"
-          hello="$TOOLCHAIN_ROOT/surgery-probe.wasm"
-          cp modules/hello/2.0.0/hello.wasm "$hello"
+          probe="$TOOLCHAIN_ROOT/surgery-probe.wasm"
+          cp modules/gc2145/2.0.0/gc2145.wasm "$probe"
           "$TOOLCHAIN_ROOT/wamrc-install/wamrc" --target=xtensa --cpu=esp32s3 --size-level=3 \
-            -o "$TOOLCHAIN_ROOT/surgery-probe.aot" "$hello" 2>&1 | tee "$TOOLCHAIN_ROOT/probe.log"
+            -o "$TOOLCHAIN_ROOT/surgery-probe.aot" "$probe" 2>&1 | tee "$TOOLCHAIN_ROOT/probe.log"
           grep -q "xuansi surgery mode: ON" "$TOOLCHAIN_ROOT/probe.log"
 
       - name: build all modules
