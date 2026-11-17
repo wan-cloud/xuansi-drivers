@@ -112,8 +112,8 @@
     }
    ],
    "fw_compat": {
-    "wasm": ">=0.7.0",
-    "note": "ABI 2 trigger face (la_window_get) — needs the wave-D loader gate {1,2}; interp .wasm lane also works. Master ruling 2026-11-17: v11/ABI 2/api_version 2 all ship with fw 0.7.0 (unreleased, usable)"
+    "wasm": ">=0.7.1",
+    "note": "ABI 2 trigger face (la_window_get) — needs the wave-D loader gate {1,2}; interp .wasm lane also works. Master ruling 2026-11-17 aligned v11/ABI 2/api_version 2, but npm 0.7.0 shipped 11-16 on the old lineage (fw db89117, protocol 10, load gate {1} — it refuses ABI 2 modules); the gate-{1,2} train first ships as fw 0.7.1, hence the floor"
    },
    "src_commit": "9d89b450d1235964dc85cc4b5602de412ec74f0b"
   }

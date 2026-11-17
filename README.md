@@ -29,9 +29,10 @@ them), honestly refused by the fw 0.5.0 loader, never silently
 substituted. **trigpat@1.0.0 is the ABI 2 exception-by-addition**
 (LA wave D): same initial==max shape, one extra host import
 (`la_window_get`) — see "Trigger modules" below; it needs the
-wave-D loader gate `{1,2}` (fw_compat `">=0.7.0"` — master ruling
-2026-11-17: v11/ABI 2/api_version 2 all ship with fw 0.7.0,
-unreleased and therefore usable; the interp `.wasm`
+wave-D loader gate `{1,2}` (fw_compat `">=0.7.1"` — master ruling
+2026-11-17 aligned v11/ABI 2/api_version 2, but npm 0.7.0 shipped
+on the old lineage with load gate `{1}`; the gate-{1,2} train first
+ships as fw 0.7.1; the interp `.wasm`
 lane works on any gate-{1,2} fw).
 
 **hello and hclock are retired (master ruling 2026-11-17: the two
@@ -82,7 +83,7 @@ refusal). One contract axis from here on: module ABI and bench
 `api_version` are the same axis (recarved at 1; master ruling
 2026-11-17 pulled `api_version` up to 2 with the ABI 2 trigger-face
 ratification — the module load gate stays {1,2}, the `--@api` driver
-gate requires 2 from fw 0.7.0 on).
+gate requires 2 from fw 0.7.1 on).
 
 Limits (frozen): args/result msgpack ≤ 8192B, container depth ≤ 8,
 module file ≤ 256KB, module memory = one fixed allocation
@@ -115,7 +116,7 @@ migration era) had exactly this table minus `la_window_get` — surviving
 old-2 artifacts are a semantic subset of ABI 2 and load unchanged.
 `api_version` = 2 (master ruling 2026-11-17, the axis alignment riding
 this ratification: the bench Lua face is unchanged; the `--@api` driver
-gate requires 2 from fw 0.7.0 on — old `--@api 1` scripts are honestly
+gate requires 2 from fw 0.7.1 on — old `--@api 1` scripts are honestly
 refused).
 
 The contract — **engine in fw, policy in wasm, recipe by agent** (the
