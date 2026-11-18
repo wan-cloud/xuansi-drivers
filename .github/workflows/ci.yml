@@ -19,8 +19,8 @@ env:
   # toolchain-v3.yml from the two pins above — same recipe). "pending"
   # until the release lands: the asset tier then skips itself and CI
   # falls back to the fork source build below.
-  WAMRC_ASSET_URL: https://github.com/wan-cloud/xuansi-drivers/releases/download/toolchain-v3/wamrc-2.4.0-xuansi-surgery-cf84bd31-linux-x64.tar.gz
-  WAMRC_MANIFEST_URL: https://github.com/wan-cloud/xuansi-drivers/releases/download/toolchain-v3/manifest.json
+  WAMRC_ASSET_URL: https://github.com/wan-cloud/xuansi-toolchain/releases/download/toolchain-v3/wamrc-2.4.0-xuansi-surgery-cf84bd31-linux-x64.tar.gz
+  WAMRC_MANIFEST_URL: https://github.com/wan-cloud/xuansi-toolchain/releases/download/toolchain-v3/manifest.json
   WAMRC_ASSET_SHA256: a69642458b4f78427d9bd2759b76aad6405fb609d7b8cb49ed384c890e3aad73
   # chain of custody: the toolchain-v3 wamrc must have been built from
   # exactly these fork sources (manifest cross-check), and its llvm
