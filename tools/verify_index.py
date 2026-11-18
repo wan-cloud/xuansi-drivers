@@ -43,14 +43,24 @@ def main() -> int:
     index = json.loads(index_path.read_text())
     fails = 0
 
-    if index.get("index_ver") != 1:
-        print(f"index_ver != 1: {index.get('index_ver')!r}", file=sys.stderr)
+    if index.get("index_ver") != 2:
+        print(f"index_ver != 2: {index.get('index_ver')!r}", file=sys.stderr)
         return 1
+
+
+    def fpath(mod: dict, f: dict) -> str:
+        """v2 entries pin absolute release urls; the tree path is
+        modules/<n>/<v>/<url basename> (v1 path keys, if any linger,
+        still win)."""
+        if f.get("path"):
+            return f["path"]
+        base = f["url"].rsplit("/", 1)[-1]
+        return f"modules/{mod['name']}/{mod['version']}/{base}"
 
     seen = set()
     for mod in index.get("modules", []):
         for f in mod.get("files", []):
-            rel = f["path"]
+            rel = fpath(mod, f)
             # index paths are repo-relative like modules/<n>/<v>/<file>
             got = built / Path(rel).relative_to("modules")
             if not got.is_file():
@@ -97,7 +107,7 @@ def main() -> int:
         aot_ns = meta.get("aot") or {}
         for target, ent in aot_ns.items():
             rel = ent["path"]
-            match = [f for f in mod.get("files", []) if f["path"] == rel]
+            match = [x for x in mod.get("files", []) if fpath(mod, x) == rel]
             if not match:
                 print(f"FAIL aot[{target}] {rel}: meta pins it, index "
                       f"files[] does not list it", file=sys.stderr)

@@ -1,0 +1,78 @@
+name: module-release
+
+# dist wave (2026-11-18): the release-is-the-module-version machinery.
+# A tag m-<name>-<ver> cuts that version's release from the TAGGED
+# tree: the version's binary artifacts + doc.md + meta.json + the
+# regenerated index.json — the "every release carries index.json"
+# invariant (releases/latest/download/index.json stays stable). The
+# regenerated index commits back to main (the tree is the authoring
+# source; the release is the serving face).
+#
+# A tag idx-<date> cuts an index-only release (the fw_compat drift
+# path): regenerate + release, no module assets.
+#
+# GITHUB_TOKEN writes this same repo's releases and pushes the index
+# commit — no cross-repo credentials here.
+
+on:
+  push:
+    tags: ['m-*', 'idx-*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: regenerate index.json (v2)
+        run: python3 tools/regen-index.py
+
+      - name: resolve the tag's asset set
+        id: assets
+        run: |
+          set -eu
+          tag="${GITHUB_REF_NAME}"
+          case "$tag" in
+            m-*)
+              # m-<name>-<ver>: everything under modules/<name>/<ver>/
+              name="$(echo "$tag" | cut -d- -f2)"
+              ver="$(echo "$tag" | cut -d- -f3)"
+              dir="modules/$name/$ver"
+              test -d "$dir" || { echo "no $dir in the tagged tree" >&2; exit 1; }
+              stage="$(mktemp -d)"
+              cp "$dir"/*.wasm "$dir"/*.aot "$stage"/ 2>/dev/null || true
+              cp "$dir"/*.lua "$stage"/ 2>/dev/null || true
+              test -n "$(ls "$stage" 2>/dev/null)" || { echo "no artifacts in $dir" >&2; exit 1; }
+              cp "$dir/doc.md" "$stage/doc.md"
+              cp "$dir/$name.meta.json" "$stage/meta.json"
+              echo "dir=$dir" >> "$GITHUB_OUTPUT"
+              echo "stage=$stage" >> "$GITHUB_OUTPUT"
+              ;;
+            idx-*)
+              stage="$(mktemp -d)"
+              echo "dir=" >> "$GITHUB_OUTPUT"
+              echo "stage=$stage" >> "$GITHUB_OUTPUT"
+              ;;
+            *) echo "unmatched tag $tag" >&2; exit 1;;
+          esac
+
+      - name: cut the release (every release carries index.json)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          stage="${{ steps.assets.outputs.stage }}"
+          dir="${{ steps.assets.outputs.dir }}"
+          cp index.json "$stage/index.json"
+          title="${GITHUB_REF_NAME}"
+          test -n "$dir" && title="$dir"
+          gh release create "${GITHUB_REF_NAME}" --title "$title" \
+            --notes "Dist-wave release cut by module-release.yml. Assets: the version's artifacts + doc.md + meta.json + the regenerated index.json (immutable once published — fixes ride a new version or an idx-<date> release)." \
+            "$stage"/*

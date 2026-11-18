@@ -1,47 +1,28 @@
 {
- "index_ver": 1,
+ "index_ver": 2,
  "modules": [
   {
-   "name": "ledwatch",
-   "kind": "production",
-   "version": "3.0.0",
-   "abi": 1,
-   "files": [
-    {
-     "path": "modules/ledwatch/3.0.0/ledwatch.wasm",
-     "sha256": "ebe70c1997d9706872f2f32f09dcfc871ac1a45a192efd7b0ff9f8bb32b06f46",
-     "bytes": 7537
-    },
-    {
-     "path": "modules/ledwatch/3.0.0/ledwatch.aot",
-     "sha256": "e5d6e0311f64c78a14e68b3a6736dde5a3ef18c32c1af5f502f4b56006bb3e68",
-     "bytes": 12744,
-     "target": "esp32s3"
-    }
-   ],
-   "fw_compat": {
-    "wasm": ">=0.5.0"
-   },
-   "src_commit": "6875d6b959efc99c8513e6f02372ac4ae2a85e57"
-  },
-  {
    "name": "gc2145",
-   "kind": "production",
    "version": "2.0.0",
    "abi": 1,
+   "kind": "production",
    "files": [
     {
-     "path": "modules/gc2145/2.0.0/gc2145.wasm",
-     "sha256": "d08cc6f978d743791f5e323f2a8132ae6d674171a956f548aef91fcf5e13d8ba",
-     "bytes": 6905
-    },
-    {
-     "path": "modules/gc2145/2.0.0/gc2145.aot",
+     "url": "https://github.com/wan-cloud/xuansi-drivers/releases/download/m-gc2145-2.0.0/gc2145.aot",
      "sha256": "3f7e9475605a8ebf9eebd938c55ad24d516cb3f383aad077cf7e796b93cef649",
      "bytes": 11904,
      "target": "esp32s3"
+    },
+    {
+     "url": "https://github.com/wan-cloud/xuansi-drivers/releases/download/m-gc2145-2.0.0/gc2145.wasm",
+     "sha256": "d08cc6f978d743791f5e323f2a8132ae6d674171a956f548aef91fcf5e13d8ba",
+     "bytes": 6905
     }
    ],
+   "doc_url": "https://github.com/wan-cloud/xuansi-drivers/releases/download/m-gc2145-2.0.0/doc.md",
+   "doc_sha256": "e50fe13ff3eb63faff7a830f23f8011499212cbf004dd71df3d06df76e1f6eac",
+   "doc_bytes": 4710,
+   "meta_url": "https://github.com/wan-cloud/xuansi-drivers/releases/download/m-gc2145-2.0.0/meta.json",
    "fw_compat": {
     "wasm": ">=0.5.0"
    },
@@ -49,22 +30,53 @@
   },
   {
    "name": "jpge",
-   "kind": "production",
    "version": "2.0.0",
    "abi": 1,
+   "kind": "production",
    "files": [
     {
-     "path": "modules/jpge/2.0.0/jpge.wasm",
-     "sha256": "94fa31266814ae39f82f46da8a2a0212e5a5e86e5d0ea7bea1e8b065762667a8",
-     "bytes": 28642
-    },
-    {
-     "path": "modules/jpge/2.0.0/jpge.aot",
+     "url": "https://github.com/wan-cloud/xuansi-drivers/releases/download/m-jpge-2.0.0/jpge.aot",
      "sha256": "2d52db47d719bfb21844a650f16c3612c5a148b5f9deb85a70ae68758221fc0e",
      "bytes": 83524,
      "target": "esp32s3"
+    },
+    {
+     "url": "https://github.com/wan-cloud/xuansi-drivers/releases/download/m-jpge-2.0.0/jpge.wasm",
+     "sha256": "94fa31266814ae39f82f46da8a2a0212e5a5e86e5d0ea7bea1e8b065762667a8",
+     "bytes": 28642
     }
    ],
+   "doc_url": "https://github.com/wan-cloud/xuansi-drivers/releases/download/m-jpge-2.0.0/doc.md",
+   "doc_sha256": "ff99aea0117878bdc1b3a684cfcf567fb9fba5e62e02d49bb93acc30465d9c59",
+   "doc_bytes": 4625,
+   "meta_url": "https://github.com/wan-cloud/xuansi-drivers/releases/download/m-jpge-2.0.0/meta.json",
+   "fw_compat": {
+    "wasm": ">=0.5.0"
+   },
+   "src_commit": "6875d6b959efc99c8513e6f02372ac4ae2a85e57"
+  },
+  {
+   "name": "ledwatch",
+   "version": "3.0.0",
+   "abi": 1,
+   "kind": "production",
+   "files": [
+    {
+     "url": "https://github.com/wan-cloud/xuansi-drivers/releases/download/m-ledwatch-3.0.0/ledwatch.aot",
+     "sha256": "e5d6e0311f64c78a14e68b3a6736dde5a3ef18c32c1af5f502f4b56006bb3e68",
+     "bytes": 12744,
+     "target": "esp32s3"
+    },
+    {
+     "url": "https://github.com/wan-cloud/xuansi-drivers/releases/download/m-ledwatch-3.0.0/ledwatch.wasm",
+     "sha256": "ebe70c1997d9706872f2f32f09dcfc871ac1a45a192efd7b0ff9f8bb32b06f46",
+     "bytes": 7537
+    }
+   ],
+   "doc_url": "https://github.com/wan-cloud/xuansi-drivers/releases/download/m-ledwatch-3.0.0/doc.md",
+   "doc_sha256": "a590bc771615460fac27b9369519ce48b3a750646a45efc4123d5c4064c607f9",
+   "doc_bytes": 3757,
+   "meta_url": "https://github.com/wan-cloud/xuansi-drivers/releases/download/m-ledwatch-3.0.0/meta.json",
    "fw_compat": {
     "wasm": ">=0.5.0"
    },
@@ -72,22 +84,26 @@
   },
   {
    "name": "st7789",
-   "kind": "production",
    "version": "2.0.0",
    "abi": 1,
+   "kind": "production",
    "files": [
     {
-     "path": "modules/st7789/2.0.0/st7789.wasm",
-     "sha256": "a546696a3551670e64fe95500bd8ccac3c465a92d71d74d715c10aa026d56376",
-     "bytes": 13487
-    },
-    {
-     "path": "modules/st7789/2.0.0/st7789.aot",
+     "url": "https://github.com/wan-cloud/xuansi-drivers/releases/download/m-st7789-2.0.0/st7789.aot",
      "sha256": "27207f65a7778f682a46b342d44ff6d7d57a6c6229126df01a36ff052b323e0c",
      "bytes": 24012,
      "target": "esp32s3"
+    },
+    {
+     "url": "https://github.com/wan-cloud/xuansi-drivers/releases/download/m-st7789-2.0.0/st7789.wasm",
+     "sha256": "a546696a3551670e64fe95500bd8ccac3c465a92d71d74d715c10aa026d56376",
+     "bytes": 13487
     }
    ],
+   "doc_url": "https://github.com/wan-cloud/xuansi-drivers/releases/download/m-st7789-2.0.0/doc.md",
+   "doc_sha256": "a81909212825ed4fe6641c920e44dc72586a0050b7e8ba426fe1e487ea46e736",
+   "doc_bytes": 7172,
+   "meta_url": "https://github.com/wan-cloud/xuansi-drivers/releases/download/m-st7789-2.0.0/meta.json",
    "fw_compat": {
     "wasm": ">=0.5.0"
    },
@@ -95,22 +111,26 @@
   },
   {
    "name": "trigpat",
-   "kind": "trigger",
    "version": "1.0.0",
    "abi": 2,
+   "kind": "trigger",
    "files": [
     {
-     "path": "modules/trigpat/1.0.0/trigpat.wasm",
-     "sha256": "364a9b531941215a64d26967f8dc6fdf7f7a365f27b678e4522d9dd9b54cad93",
-     "bytes": 2187
-    },
-    {
-     "path": "modules/trigpat/1.0.0/trigpat.aot",
+     "url": "https://github.com/wan-cloud/xuansi-drivers/releases/download/m-trigpat-1.0.0/trigpat.aot",
      "sha256": "d985b8e7b556bb75c9f946be61ab1f331cced8000ef605cede586bfdd891a04e",
      "bytes": 3140,
      "target": "esp32s3"
+    },
+    {
+     "url": "https://github.com/wan-cloud/xuansi-drivers/releases/download/m-trigpat-1.0.0/trigpat.wasm",
+     "sha256": "364a9b531941215a64d26967f8dc6fdf7f7a365f27b678e4522d9dd9b54cad93",
+     "bytes": 2187
     }
    ],
+   "doc_url": "https://github.com/wan-cloud/xuansi-drivers/releases/download/m-trigpat-1.0.0/doc.md",
+   "doc_sha256": "f999543c046fe9822152efca6e5cd848a0a1b7b2506becec2ec2dd39d6f1c0ac",
+   "doc_bytes": 2606,
+   "meta_url": "https://github.com/wan-cloud/xuansi-drivers/releases/download/m-trigpat-1.0.0/meta.json",
    "fw_compat": {
     "wasm": ">=0.7.1",
     "note": "ABI 2 trigger face (la_window_get) — needs the wave-D loader gate {1,2}; interp .wasm lane also works. Master ruling 2026-11-17 aligned v11/ABI 2/api_version 2, but npm 0.7.0 shipped 11-16 on the old lineage (fw db89117, protocol 10, load gate {1} — it refuses ABI 2 modules); the gate-{1,2} train first ships as fw 0.7.1, hence the floor"
